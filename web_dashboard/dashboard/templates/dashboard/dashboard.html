@@ -8,7 +8,9 @@
   {% include 'dashboard/partials/room_header.html' %}
 
   {% if questions_list and selected_room.id != selected_course.teachers_room.id %}
-    {% include 'dashboard/partials/questions_panel.html' %}
+    {% if not selected_course.general_room or selected_room.id != selected_course.general_room.id %}
+      {% include 'dashboard/partials/questions_panel.html' %}
+    {% endif %}
   {% endif %}
 
   {% if selected_room.id != selected_course.teachers_room.id %}

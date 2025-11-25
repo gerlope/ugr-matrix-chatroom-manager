@@ -406,6 +406,7 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
             for student in student_db_data:
                 moodle_user = next((s for s in enrolled_data if s['id'] == student.moodle_id), None)
                 selected_students.append({
+                    'id': student.id,
                     'moodle_id': student.moodle_id,
                     'matrix_id': student.matrix_id,
                     'full_name': moodle_user.get('fullname', None) if moodle_user else 'Desconocido',
@@ -426,6 +427,7 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
             for student in student_db_data:
                 moodle_user = next((s for s in enrolled_data if s['id'] == student.moodle_id), None)
                 selected_students.append({
+                    'id': student.id,
                     'moodle_id': student.moodle_id,
                     'matrix_id': student.matrix_id,
                     'full_name': moodle_user.get('fullname', None) if moodle_user else 'Desconocido',
@@ -433,7 +435,91 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
                     'groups': moodle_user.get('groups', None) if moodle_user else []
                 })
         # Fetch all questions for this selected room (including inactive / manual flags)
-        selected_questions = assemble_questions_for_room(selected_room, teacher['id'])
+        # If the selected room is the course's general room, include questions from
+        # all course rooms (course_rooms) plus the general room so that the
+        # dashboard shows student data across the whole course.
+        selected_questions = []
+        try:
+            if selected_room and selected_room.teacher_id is None and selected_room.shortcode == course.get('shortname'):
+                rooms_to_assemble = list(course_rooms)
+                if general_room:
+                    rooms_to_assemble.append(general_room)
+                for rm in rooms_to_assemble:
+                    try:
+                        selected_questions.extend(assemble_questions_for_room(rm, teacher['id']) or [])
+                    except Exception:
+                        # ignore per-room failures and continue
+                        continue
+            else:
+                selected_questions = assemble_questions_for_room(selected_room, teacher['id'])
+        except Exception:
+            selected_questions = []
+
+        # If we have a students list, attach each student's own responses (aggregated across questions)
+        try:
+            if selected_students is not None and selected_questions:
+                # Build a map student_id -> list of responses
+                student_responses_map = {}
+                for qentry in selected_questions:
+                    qobj = qentry.get('question')
+                    qtitle = getattr(qobj, 'title', None) or f"Pregunta {getattr(qobj, 'id', '')}"
+                    # Collect expected answers from question options when available
+                    expected_text = None
+                    expected_options = []
+                    try:
+                        for o in qentry.get('options', []) or []:
+                            # short_answer/numeric expected value stored under option_key 'ANSWER'
+                            if getattr(o, 'option_key', None) == 'ANSWER' and getattr(o, 'text', None):
+                                expected_text = o.text
+                        # for multiple choice, collect correct options but skip ANSWER pseudo-option
+                        for o in qentry.get('options', []) or []:
+                            try:
+                                if getattr(o, 'is_correct', False) and getattr(o, 'option_key', None) != 'ANSWER':
+                                    expected_options.append({'id': getattr(o, 'id', None), 'option_key': getattr(o, 'option_key', None), 'text': getattr(o, 'text', None)})
+                            except Exception:
+                                continue
+                    except Exception:
+                        expected_text = None
+                        expected_options = []
+
+                    for r in qentry.get('responses', []):
+                        # Build selected options with id/key/text by matching option_ids against question options
+                        selected_options = []
+                        try:
+                            resp_opt_ids = r.get('option_ids') or ([] if r.get('option_id') is None else [r.get('option_id')])
+                            if resp_opt_ids:
+                                for o in qentry.get('options', []) or []:
+                                    if getattr(o, 'id', None) in resp_opt_ids:
+                                        selected_options.append({'id': getattr(o, 'id', None), 'option_key': getattr(o, 'option_key', None), 'text': getattr(o, 'text', None)})
+                        except Exception:
+                            selected_options = []
+
+                        student_responses_map.setdefault(r.get('student_id'), []).append({
+                            'id': r.get('id'),
+                            'question_id': getattr(qobj, 'id', None),
+                            'question_title': qtitle,
+                            'option_id': r.get('option_id'),
+                            'option_key': r.get('option_key'),
+                            'option_ids': r.get('option_ids'),
+                            'option_keys': r.get('option_keys'),
+                            'answer_text': r.get('answer_text'),
+                            'submitted_at': r.get('submitted_at'),
+                            'score': r.get('score'),
+                            'is_graded': r.get('is_graded'),
+                            'grader': r.get('grader'),
+                            'feedback': r.get('feedback'),
+                            'expected_text': expected_text,
+                            'expected_options': expected_options,
+                            'selected_options': selected_options,
+                        })
+
+                # Attach to each student entry by DB id
+                for s in selected_students:
+                    s_db_id = s.get('id')
+                    s['responses'] = student_responses_map.get(s_db_id, [])
+        except Exception:
+            # best-effort; do not break dashboard assembly on errors here
+            pass
     
     thread_results[index] = {
         'id': course_id,

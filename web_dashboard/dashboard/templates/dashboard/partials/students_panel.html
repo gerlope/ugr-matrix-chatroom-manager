@@ -53,6 +53,93 @@
         {% else %}
           <p class="text-gray-500 italic">Sin reacciones registradas.</p>
         {% endif %}
+        
+        <h4 class="font-semibold mb-2 text-gray-700 mt-4">Respuestas dadas:</h4>
+        {% if student.responses %}
+          <ul class="divide-y text-sm text-gray-700">
+            {% for r in student.responses %}
+              <li class="py-2">
+                <div class="flex items-start gap-3">
+                  <div class="w-20 flex-shrink-0">
+                    {% if r.score is not None %}
+                      {% if r.score == 100 %}
+                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-800">{{ r.score }}</div>
+                      {% elif r.score >= 75 %}
+                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-green-100 text-green-800">{{ r.score }}</div>
+                      {% elif r.score >= 50 %}
+                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-yellow-100 text-yellow-800">{{ r.score }}</div>
+                      {% else %}
+                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-800">{{ r.score }}</div>
+                      {% endif %}
+                    {% else %}
+                      <div class="text-center text-xs font-medium px-2 py-1 rounded bg-gray-100 text-gray-600">Sin nota</div>
+                    {% endif %}
+                  </div>
+
+                  <div class="flex-1">
+                    <div class="flex justify-between items-start">
+                      <div>
+                        <div class="font-medium">{{ r.question_title }}</div>
+                        <div class="text-xs text-gray-500">{{ r.submitted_at|date:"Y-m-d H:i" }}</div>
+                      </div>
+                    </div>
+
+                    <div class="mt-1 text-gray-700">
+                      {% if r.answer_text %}
+                        <div class="mb-1">{{ r.answer_text }}</div>
+                      {% endif %}
+                      {% if r.option_id %}
+                        <div class="text-xs text-gray-600">Opción seleccionada: <strong>{{ r.option_key }}</strong></div>
+                      {% endif %}
+                      {% if r.selected_options %}
+                        <div class="text-xs text-gray-600 mt-1">Opciones seleccionadas:
+                          {% for so in r.selected_options %}
+                            <div class="ml-2">- {{ so.option_key }} — {{ so.text }}</div>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+
+                      {% comment %} Expected answers: either explicit expected text (short_answer/numeric) or correct choices for multiple choice {% endcomment %}
+                      {% if r.expected_text %}
+                        <div class="text-xs text-gray-500 mt-1">Respuesta esperada: <strong>{{ r.expected_text }}</strong></div>
+                      {% elif r.expected_options %}
+                        <div class="text-xs text-gray-500 mt-1">Opciones correctas:
+                          {% for o in r.expected_options %}
+                            <div class="ml-2">- {{ o.option_key }} — {{ o.text }}</div>
+                          {% endfor %}
+                        </div>
+                      {% endif %}
+                    </div>
+                  </div>
+
+                  <div class="w-48 flex-shrink-0 text-right">
+                    <div class="text-xs text-gray-500">
+                      {% if r.grader %}
+                        {% with gname=None %}{% for s2 in students %}{% if s2.moodle_id == r.grader.moodle_id %}{% with gname=s2.full_name %}{% endwith %}{% endif %}{% endfor %}
+                          {% if gname %}
+                            Corregido por: {{ gname }}
+                          {% else %}
+                            Corregido por: {{ r.grader.matrix_id }}
+                          {% endif %}
+                        {% endwith %}
+                      {% else %}
+                        Corregido por: Automático
+                      {% endif %}
+                    </div>
+                    {% if r.feedback %}
+                      <div class="mt-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">Feedback: {{ r.feedback }}</div>
+                    {% endif %}
+                    <div class="mt-3">
+                      <button type="button" onclick="event.stopPropagation();" class="px-2 py-1 bg-indigo-500 text-white rounded text-sm open-grade-modal" data-response-id="{{ r.id }}" data-score="{{ r.score|default_if_none:'' }}" data-feedback="{{ r.feedback|default_if_none:''|escapejs }}">Corregir</button>
+                    </div>
+                  </div>
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="text-gray-500 italic mt-2">Aún no hay respuestas de este estudiante.</p>
+        {% endif %}
       </div>
     </li>
     {% endfor %}

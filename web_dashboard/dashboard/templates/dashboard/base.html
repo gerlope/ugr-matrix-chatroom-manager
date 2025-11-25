@@ -87,5 +87,97 @@
     });
   </script>
 
+  <script>
+    // Global scroll position persistence across all page navigations
+    (function(){
+      const SCROLL_KEY = 'dashboard_scroll_position';
+      
+      // Set manual scroll restoration to prevent browser interference
+      try{ if ('scrollRestoration' in history) history.scrollRestoration = 'manual'; }catch(e){}
+
+      // Get the scrollable main element
+      function getScrollContainer(){
+        return document.querySelector('main.overflow-y-auto');
+      }
+
+      // Save scroll position on every scroll with debounce
+      function debounce(fn, wait){ let t; return function(){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,arguments), wait); }; }
+      const saveScroll = debounce(function(){
+        const main = getScrollContainer();
+        if (main){
+          try{ localStorage.setItem(SCROLL_KEY, String(main.scrollTop || 0)); }catch(e){}
+        }
+      }, 150);
+
+      // Attach scroll listener to main element after DOM ready
+      function attachScrollListener(){
+        const main = getScrollContainer();
+        if (main){
+          main.addEventListener('scroll', saveScroll, {passive:true});
+        }
+      }
+
+      // Save scroll before any form submission
+      document.addEventListener('submit', function(e){
+        const main = getScrollContainer();
+        if (main){
+          try{ localStorage.setItem(SCROLL_KEY, String(main.scrollTop || 0)); }catch(e){}
+        }
+      }, true);
+
+      // Save scroll before page unload (navigation/reload)
+      window.addEventListener('beforeunload', function(){
+        const main = getScrollContainer();
+        if (main){
+          try{ localStorage.setItem(SCROLL_KEY, String(main.scrollTop || 0)); }catch(e){}
+        }
+      });
+
+      // Restore scroll on page load - AFTER Alpine/panels have initialized
+      function restoreScroll(){
+        const main = getScrollContainer();
+        if (main){
+          try{
+            const saved = localStorage.getItem(SCROLL_KEY);
+            if (saved !== null){
+              const y = parseInt(saved, 10) || 0;
+              main.scrollTop = y;
+            }
+          }catch(e){}
+        }
+      }
+
+      // Wait for Alpine to finish initialization and panels to restore their state
+      let alpineReady = false;
+      document.addEventListener('alpine:initialized', function(){
+        alpineReady = true;
+      });
+
+      // Delayed restore to allow collapsible panels to settle
+      function delayedRestore(){
+        // Wait for Alpine + a short delay for panel animations
+        if (alpineReady || document.readyState === 'complete'){
+          setTimeout(restoreScroll, 100);
+          // Additional retries in case of layout shifts
+          setTimeout(restoreScroll, 300);
+          setTimeout(restoreScroll, 500);
+        } else {
+          requestAnimationFrame(delayedRestore);
+        }
+      }
+
+      if (document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', function(){
+          attachScrollListener();
+          delayedRestore();
+        });
+        window.addEventListener('load', delayedRestore);
+      } else {
+        attachScrollListener();
+        delayedRestore();
+      }
+    })();
+  </script>
+
 </body>
 </html>

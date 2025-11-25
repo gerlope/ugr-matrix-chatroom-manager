@@ -8,7 +8,7 @@
 >
   <div class="bg-white rounded-lg shadow-lg w-full max-w-md z-50 p-6" @click.stop x-transition.opacity>
     <h3 class="text-lg font-semibold mb-4">Corregir respuesta</h3>
-    <form method="post" :action="`{% url 'dashboard:grade_response' 0 %}`.replace('/0/', '/' + $store.modal.gradeResponseId + '/')" onsubmit="try{ localStorage.setItem('questions_panel_scroll_window', String(window.scrollY || window.pageYOffset || 0)); }catch(e){}">
+    <form method="post" :action="`{% url 'dashboard:grade_response' 0 %}`.replace('/0/', '/' + $store.modal.gradeResponseId + '/')">
       {% csrf_token %}
       <div class="mb-3">
         <label class="block text-sm font-medium text-gray-700">Puntuación (0-100)</label>
