@@ -7,6 +7,8 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 from django.contrib.auth import login
 from django.contrib.auth.models import User
+import json
+from django.core.serializers.json import DjangoJSONEncoder
 
 from .utils import (
     get_data_for_dashboard,
@@ -20,6 +22,32 @@ from .models import Question, QuestionOption, QuestionResponse
 from django.utils import timezone
 from config import HOMESERVER
 from .models import QuestionResponse
+
+# ---------------------------------------------------------------------------
+# Helper to serialize Django models to JSON
+# ---------------------------------------------------------------------------
+def serialize_for_json(obj):
+    """Recursively convert Django models and other objects to JSON-serializable format."""
+    from datetime import datetime, date, time
+    from decimal import Decimal
+    
+    if isinstance(obj, (datetime, date, time)):
+        return obj.isoformat()
+    elif isinstance(obj, Decimal):
+        return float(obj)
+    elif hasattr(obj, '__dict__') and hasattr(obj, '_meta'):
+        # Django model instance
+        data = {}
+        for field in obj._meta.fields:
+            value = getattr(obj, field.name)
+            data[field.name] = serialize_for_json(value)
+        return data
+    elif isinstance(obj, dict):
+        return {k: serialize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [serialize_for_json(item) for item in obj]
+    else:
+        return obj
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -48,20 +76,29 @@ def _render_schedule(request, teacher, extra_context=None):
     return render(request, 'dashboard/schedule.html', ctx)
 
 @login_required(login_url='dashboard:login')
-def dashboard(request):
+def dashboard(request, room_id=None):
     teacher = _get_teacher(request)
     if not teacher:
         return redirect('dashboard:login')
-    selected_room_id = request.GET.get('room_id')
+    # Accept room_id from URL path or query parameter (for backwards compatibility)
+    selected_room_id = str(room_id) if room_id else request.GET.get('room_id')
     data = get_data_for_dashboard(teacher, selected_room_id)
     questions_list = data.get('selected_questions', []) or []
+    students = data['selected_students']
+    
+    # Serialize data for JSON download
+    students_serialized = serialize_for_json(students)
+    questions_serialized = serialize_for_json(questions_list)
+    
     return render(request, 'dashboard/dashboard.html', {
         'teacher': teacher,
         'courses': data['courses'],
         'selected_room': data['selected_room'],
         'selected_course': data['selected_course'],
-        'students': data['selected_students'],
+        'students': students,
+        'students_json': json.dumps(students_serialized),
         'questions_list': questions_list,
+        'questions_json': json.dumps(questions_serialized),
         'selected_page': 'dashboard',
     })
 
@@ -379,9 +416,11 @@ def create_question(request):
             tf_correct = request.POST.get('tf_correct')
             for idx, opt_text in enumerate(options):
                 is_correct = (str(idx) == str(tf_correct)) if tf_correct is not None else False
+                # Use 'V' for Verdadero (True) and 'F' for Falso (False)
+                option_key = 'V' if idx == 0 else 'F'
                 QuestionOption.objects.using('bot_db').create(
                     question_id=q.id,
-                    option_key=chr(65 + (idx % 26)),
+                    option_key=option_key,
                     text=opt_text,
                     is_correct=is_correct,
                     position=idx

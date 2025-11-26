@@ -1,0 +1,122 @@
+{% comment %} Shared response item partial. Expects variables:
+     - r: response dict/object with keys used below (score, submitted_at, question_title, answer_text,
+           selected_options, expected_text, expected_options, feedback, grader, id)
+     - students: list used to lookup grader/student names (optional)
+     - show_student_name: boolean, if true show student name (lookup via r.student), otherwise show question_title
+     - is_general_room: boolean, if true always show correct answers (optional, defaults to False)
+{% endcomment %}
+<li class="py-2">
+  <div class="flex items-start gap-3">
+    <!-- Score badge -->
+    <div class="w-20 flex-shrink-0">
+      {% if r.question_type == 'poll' %}
+        <div class="text-center text-xs font-medium px-2 py-1 rounded bg-blue-100 text-blue-800">📊</div>
+      {% elif r.score is not None %}
+        {% if r.score == 100 %}
+          <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-800">{{ r.score }}</div>
+        {% elif r.score >= 75 %}
+          <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-green-100 text-green-800">{{ r.score }}</div>
+        {% elif r.score >= 50 %}
+          <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-yellow-100 text-yellow-800">{{ r.score }}</div>
+        {% else %}
+          <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-800">{{ r.score }}</div>
+        {% endif %}
+      {% else %}
+        <div class="text-center text-xs font-medium px-2 py-1 rounded bg-gray-100 text-gray-600">Sin nota</div>
+      {% endif %}
+    </div>
+
+    <!-- Main content -->
+    <div class="flex-1">
+      <div class="flex justify-between items-start">
+        <div>
+          <div class="font-medium text-gray-800">
+            {% if show_student_name %}
+              {% if r.student_full_name %}
+                {{ r.student_full_name }} 
+                {% if r.student %}
+                  <span class="text-gray-500 text-sm font-normal">({{ r.student.matrix_id }})</span>
+                {% endif %}
+              {% elif r.student %}
+                {{ r.student.matrix_id }}
+              {% else %}
+                ID {{ r.student_id }}
+              {% endif %}
+            {% else %}
+              {{ r.question_title }}
+            {% endif %}
+          </div>
+          {% if r.room_shortcode %}
+            <div class="text-xs text-gray-400">Sala: {{ r.room_shortcode }}</div>
+          {% endif %}
+          <div class="text-xs text-gray-500">{{ r.submitted_at|date:"Y-m-d H:i" }}</div>
+        </div>
+      </div>
+
+      <div class="mt-1 text-gray-700">
+        {% if r.answer_text %}
+          <div class="mb-1">{{ r.answer_text }}</div>
+        {% endif %}
+
+        {% if r.selected_options %}
+          <div class="text-xs text-gray-600">{% if r.selected_options|length > 1 %}Opciones seleccionadas:{% else %}Opción seleccionada:{% endif %}</div>
+          <div class="mt-1 flex flex-wrap gap-2">
+            {% for so in r.selected_options %}
+              {% if r.question_type == 'poll' %}
+                {# For polls, always show neutral style #}
+                <span class="inline-block px-2 py-1 text-xs rounded border text-gray-700 border-gray-300 bg-gray-50">{{ so.option_key }} — {{ so.text }}</span>
+              {% else %}
+                {# For questions, show neutral or correct/incorrect based on toggle #}
+                <span class="response-neutral inline-block px-2 py-1 text-xs rounded border text-gray-700 border-gray-300 bg-gray-50" {% if is_general_room %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }}</span>
+                {% if so.is_correct %}
+                  <span class="response-correct inline-block px-2 py-1 text-xs rounded border text-green-700 border-green-200 bg-green-50" {% if not is_general_room %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }} ✓</span>
+                {% else %}
+                  <span class="response-incorrect inline-block px-2 py-1 text-xs rounded border text-red-700 border-red-200 bg-red-50" {% if not is_general_room %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }} ✗</span>
+                {% endif %}
+              {% endif %}
+            {% endfor %}
+          </div>
+        {% elif r.option_id %}
+          <div class="text-xs text-gray-600">Opción seleccionada: <strong>{% if r.option_key %}{{ r.option_key }}{% else %}Opción no encontrada (ID: {{ r.option_id }}){% endif %}</strong></div>
+        {% endif %}
+
+        {% if r.expected_text %}
+          <div class="expected-answer text-xs text-gray-500 mt-2" {% if not is_general_room %}style="display:none"{% endif %}>Respuesta esperada: <strong>{{ r.expected_text }}</strong></div>
+        {% elif r.expected_options %}
+          <div class="expected-answer text-xs text-gray-500 mt-2" {% if not is_general_room %}style="display:none"{% endif %}>Opciones correctas:
+            {% for o in r.expected_options %}
+              <div class="ml-2">- {{ o.option_key }} — {{ o.text }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Right column: grader & feedback -->
+    <div class="w-48 flex-shrink-0 text-right">
+      {% if r.question_type != 'poll' %}
+        {% if r.is_graded %}
+          <div class="text-xs text-gray-500">
+            {% if r.grader %}
+              {% with gname=None %}{% for s2 in students %}{% if s2.moodle_id == r.grader.moodle_id %}{% with gname=s2.full_name %}{% endwith %}{% endif %}{% endfor %}
+                {% if gname %}Corregido por: {{ gname }}{% else %}Corregido por: {{ r.grader.matrix_id }}{% endif %}
+              {% endwith %}
+            {% else %}
+              Corregido por: Automático
+            {% endif %}
+          </div>
+          {% if r.feedback %}
+            <div class="mt-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">Feedback: {{ r.feedback }}</div>
+          {% endif %}
+        {% endif %}
+        <div class="mt-3">
+          <button type="button" onclick="event.stopPropagation();" class="px-2 py-1 bg-indigo-500 text-white rounded text-sm open-grade-modal" data-response-id="{{ r.id }}" data-score="{{ r.score|default_if_none:'' }}" data-feedback="{{ r.feedback|default_if_none:''|escapejs }}">Corregir</button>
+        </div>
+      {% else %}
+        <div class="text-xs text-gray-500 italic">
+          Encuesta (sin calificación)
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</li>

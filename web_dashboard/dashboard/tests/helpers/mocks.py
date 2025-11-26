@@ -246,6 +246,7 @@ class DummyRoom:
         self.id = id
         self.shortcode = f"ROOM{id}"
         self.teacher_id = 42
+        self.moodle_group = None
 
 
 class DummyQuestion:

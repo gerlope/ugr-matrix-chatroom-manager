@@ -7,8 +7,9 @@ from . import views
 app_name = 'dashboard'
 
 urlpatterns = [
-    # Dashboard root
+    # Dashboard root (with optional room_id)
     path('', views.dashboard, name='dashboard'),
+    path('room/<int:room_id>/', views.dashboard, name='dashboard_room'),
 
     # Authentication
     path('login/', views.external_login, name='login'),

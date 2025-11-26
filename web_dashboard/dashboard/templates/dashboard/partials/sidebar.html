@@ -30,9 +30,9 @@
       </li>
 
       {% for course in courses %}
-      <li x-data="{ open: {{ course.is_open }} }">
+      <li x-data="{ open: false }" x-init="const stored = __lsGet('sidebar_course_{{ course.id }}'); open = stored !== null ? stored === 'true' : {{ course.is_open }}">
         <button
-          @click="open = !open"
+          @click="open = !open; __lsSet('sidebar_course_{{ course.id }}', open ? 'true' : 'false')"
           class="w-full text-left px-3 py-2 rounded-md flex justify-between items-center transition-colors bg-gray-100 hover:bg-gray-200"
         >
 
@@ -56,7 +56,7 @@
         >
           {% if course.general_room %}
           <li>
-            <a href="{% url 'dashboard:dashboard' %}?room_id={{ course.general_room.id }}"
+            <a href="{% url 'dashboard:dashboard_room' course.general_room.id %}"
                class="flex items-center gap-2 px-3 py-1 rounded-md transition-colors
                     {% if selected_room.id == course.general_room.id %} bg-blue-50 text-blue-700 {% else %} text-gray-700 hover:text-blue-600 hover:bg-gray-50 {% endif %}">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -69,7 +69,7 @@
 
           {% if course.teachers_room %}
           <li>
-            <a href="{% url 'dashboard:dashboard' %}?room_id={{ course.teachers_room.id }}"
+            <a href="{% url 'dashboard:dashboard_room' course.teachers_room.id %}"
                class="flex items-center gap-2 px-3 py-1 rounded-md transition-colors
                     {% if selected_room.id == course.teachers_room.id %} bg-blue-50 text-blue-700 {% else %} text-gray-700 hover:text-blue-600 hover:bg-gray-50 {% endif %}">
               <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
@@ -85,7 +85,7 @@
             {% for room in course.rooms %}
               {% if room.active %}
                 <li>
-                  <a href="{% url 'dashboard:dashboard' %}?room_id={{ room.id }}"
+                  <a href="{% url 'dashboard:dashboard_room' room.id %}"
                      class="flex items-center gap-2 px-3 py-1 rounded-md transition-colors
                           {% if selected_room.id == room.id %} bg-blue-50 text-blue-700 {% else %} text-gray-700 hover:text-blue-600 hover:bg-gray-50 {% endif %}">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

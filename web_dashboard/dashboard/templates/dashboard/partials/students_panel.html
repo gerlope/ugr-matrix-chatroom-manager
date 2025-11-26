@@ -1,14 +1,26 @@
 {% comment %} Students panel: list of students and their reactions {% endcomment %}
 <div class="bg-white shadow rounded-lg p-4">
-  <h3 class="text-lg font-semibold mb-4">Estudiantes</h3>
+  <div class="flex justify-between items-center mb-4">
+    <h3 class="text-lg font-semibold">Estudiantes</h3>
+    <button 
+      @click="downloadStudentsJSON()" 
+      class="px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition flex items-center gap-1"
+      title="Descargar datos de estudiantes como JSON"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
+      JSON
+    </button>
+  </div>
   <ul class="divide-y">
     {% if not students %}
         <p class="text-gray-600 italic">No hay estudiantes en esta sala.</p>
     {% endif %}
     {% for student in students %}
-    <li x-data="{ open: false }" class="py-2">
+    <li x-data="{ open: false, showManualOnly: false }" x-init="const stored = __lsGet('student_{{ student.id }}'); open = stored === 'true'; showManualOnly = __lsGet('student_manual_only_{{ student.id }}') === 'true'" class="py-2">
       <button 
-        @click="open = !open" 
+        @click="open = !open; __lsSet('student_{{ student.id }}', open ? 'true' : 'false')" 
         class="w-full flex justify-between items-center text-left px-2 py-2 hover:bg-gray-50 rounded transition"
       >
         <span class="font-medium text-gray-800">
@@ -30,7 +42,7 @@
         x-transition
         class="ml-4 mt-2 bg-gray-50 rounded-lg border p-3"
       >
-        <h4 class="font-semibold mb-2 text-gray-700">Reacciones dadas:</h4>
+        <h4 class="font-semibold mb-2 text-gray-700">Reacciones:</h4>
         {% if student.reactions %}
           <table class="w-full text-sm text-gray-700">
             <thead>
@@ -54,87 +66,140 @@
           <p class="text-gray-500 italic">Sin reacciones registradas.</p>
         {% endif %}
         
-        <h4 class="font-semibold mb-2 text-gray-700 mt-4">Respuestas dadas:</h4>
+        <h4 class="font-semibold mb-2 text-gray-700 mt-4">Respuestas:</h4>
         {% if student.responses %}
-          <ul class="divide-y text-sm text-gray-700">
-            {% for r in student.responses %}
-              <li class="py-2">
-                <div class="flex items-start gap-3">
-                  <div class="w-20 flex-shrink-0">
-                    {% if r.score is not None %}
-                      {% if r.score == 100 %}
-                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-blue-100 text-blue-800">{{ r.score }}</div>
-                      {% elif r.score >= 75 %}
-                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-green-100 text-green-800">{{ r.score }}</div>
-                      {% elif r.score >= 50 %}
-                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-yellow-100 text-yellow-800">{{ r.score }}</div>
+          
+          {# Analytics box with both score distribution and participation #}
+          {% with sd=student.score_distribution sd_manual=student.score_distribution_manual p=student.participation %}
+          {% if sd %}
+            <div class="mt-4 p-3 bg-gray-50 rounded-md border border-gray-200">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                {# Score distribution chart #}
+                {% if sd %}
+                <div>
+                  <h4 class="text-sm font-semibold text-gray-700 mb-2">Puntuaciones</h4>
+                  <div class="flex items-start gap-3">
+                    <div class="flex-shrink-0">
+                      {% if sd.total > 0 %}
+                        <svg width="80" height="80" viewBox="0 0 36 36" x-show="!showManualOnly">
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#D1D5DB" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd.pct_no_score }} 100" 
+                                  stroke-dashoffset="{{ sd.offset_no_score }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#93C5FD" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd.pct_100 }} 100" 
+                                  stroke-dashoffset="{{ sd.offset_100 }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#6EE7B7" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd.pct_75_99 }} 100" 
+                                  stroke-dashoffset="{{ sd.offset_75_99 }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#FCD34D" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd.pct_50_74 }} 100" 
+                                  stroke-dashoffset="{{ sd.offset_50_74 }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#FCA5A5" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd.pct_0_49 }} 100" 
+                                  stroke-dashoffset="0" 
+                                  transform="rotate(-90 18 18)"></circle>
+                        </svg>
+                        <svg width="80" height="80" viewBox="0 0 36 36" x-show="showManualOnly" x-cloak>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#D1D5DB" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd_manual.pct_no_score }} 100" 
+                                  stroke-dashoffset="{{ sd_manual.offset_no_score }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#93C5FD" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd_manual.pct_100 }} 100" 
+                                  stroke-dashoffset="{{ sd_manual.offset_100 }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#6EE7B7" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd_manual.pct_75_99 }} 100" 
+                                  stroke-dashoffset="{{ sd_manual.offset_75_99 }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#FCD34D" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd_manual.pct_50_74 }} 100" 
+                                  stroke-dashoffset="{{ sd_manual.offset_50_74 }}" 
+                                  transform="rotate(-90 18 18)"></circle>
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#FCA5A5" stroke-width="3.5" 
+                                  stroke-dasharray="{{ sd_manual.pct_0_49 }} 100" 
+                                  stroke-dashoffset="0" 
+                                  transform="rotate(-90 18 18)"></circle>
+                        </svg>
                       {% else %}
-                        <div class="text-center text-xs font-semibold px-2 py-1 rounded bg-red-100 text-red-800">{{ r.score }}</div>
+                        <svg width="80" height="80" viewBox="0 0 36 36">
+                          <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#D1D5DB" stroke-width="3.5" 
+                                  stroke-dasharray="100 100" 
+                                  stroke-dashoffset="0" 
+                                  transform="rotate(-90 18 18)"></circle>
+                        </svg>
                       {% endif %}
-                    {% else %}
-                      <div class="text-center text-xs font-medium px-2 py-1 rounded bg-gray-100 text-gray-600">Sin nota</div>
-                    {% endif %}
-                  </div>
-
-                  <div class="flex-1">
-                    <div class="flex justify-between items-start">
-                      <div>
-                        <div class="font-medium">{{ r.question_title }}</div>
-                        <div class="text-xs text-gray-500">{{ r.submitted_at|date:"Y-m-d H:i" }}</div>
+                    </div>
+                    <div class="text-xs text-gray-600 leading-tight">
+                      <div x-show="!showManualOnly">
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-red-300 rounded-full"></span><span>0-49: {{ sd.bracket_0_49 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-yellow-300 rounded-full"></span><span>50-74: {{ sd.bracket_50_74 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-green-300 rounded-full"></span><span>75-99: {{ sd.bracket_75_99 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-blue-300 rounded-full"></span><span>100: {{ sd.bracket_100 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-gray-300 rounded-full"></span><span>Sin nota: {{ sd.no_score }}</span></div>
+                        {% if sd.average is not None %}
+                        <div class="mt-1 pt-1 border-t border-gray-300 font-semibold">Media: {{ sd.average }}</div>
+                        {% endif %}
+                      </div>
+                      <div x-show="showManualOnly" x-cloak>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-red-300 rounded-full"></span><span>0-49: {{ sd_manual.bracket_0_49 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-yellow-300 rounded-full"></span><span>50-74: {{ sd_manual.bracket_50_74 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-green-300 rounded-full"></span><span>75-99: {{ sd_manual.bracket_75_99 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-blue-300 rounded-full"></span><span>100: {{ sd_manual.bracket_100 }}</span></div>
+                        <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-gray-300 rounded-full"></span><span>Sin nota: {{ sd_manual.no_score }}</span></div>
+                        {% if sd_manual.average is not None %}
+                        <div class="mt-1 pt-1 border-t border-gray-300 font-semibold">Media: {{ sd_manual.average }}</div>
+                        {% endif %}
                       </div>
                     </div>
-
-                    <div class="mt-1 text-gray-700">
-                      {% if r.answer_text %}
-                        <div class="mb-1">{{ r.answer_text }}</div>
-                      {% endif %}
-                      {% if r.option_id %}
-                        <div class="text-xs text-gray-600">Opción seleccionada: <strong>{{ r.option_key }}</strong></div>
-                      {% endif %}
-                      {% if r.selected_options %}
-                        <div class="text-xs text-gray-600 mt-1">Opciones seleccionadas:
-                          {% for so in r.selected_options %}
-                            <div class="ml-2">- {{ so.option_key }} — {{ so.text }}</div>
-                          {% endfor %}
-                        </div>
-                      {% endif %}
-
-                      {% comment %} Expected answers: either explicit expected text (short_answer/numeric) or correct choices for multiple choice {% endcomment %}
-                      {% if r.expected_text %}
-                        <div class="text-xs text-gray-500 mt-1">Respuesta esperada: <strong>{{ r.expected_text }}</strong></div>
-                      {% elif r.expected_options %}
-                        <div class="text-xs text-gray-500 mt-1">Opciones correctas:
-                          {% for o in r.expected_options %}
-                            <div class="ml-2">- {{ o.option_key }} — {{ o.text }}</div>
-                          {% endfor %}
-                        </div>
-                      {% endif %}
-                    </div>
                   </div>
-
-                  <div class="w-48 flex-shrink-0 text-right">
-                    <div class="text-xs text-gray-500">
-                      {% if r.grader %}
-                        {% with gname=None %}{% for s2 in students %}{% if s2.moodle_id == r.grader.moodle_id %}{% with gname=s2.full_name %}{% endwith %}{% endif %}{% endfor %}
-                          {% if gname %}
-                            Corregido por: {{ gname }}
-                          {% else %}
-                            Corregido por: {{ r.grader.matrix_id }}
-                          {% endif %}
-                        {% endwith %}
-                      {% else %}
-                        Corregido por: Automático
-                      {% endif %}
+                  <button type="button" @click.stop="showManualOnly = !showManualOnly; __lsSet('student_manual_only_{{ student.id }}', showManualOnly ? 'true' : 'false')" 
+                          class="mt-2 px-2 py-0.5 text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 rounded transition">
+                    <span x-show="!showManualOnly">Solo manuales</span>
+                    <span x-show="showManualOnly" x-cloak>Todas</span>
+                  </button>
+                </div>
+                {% endif %}
+                
+                {# Participation chart #}
+                {% if p and p.total > 0 %}
+                <div>
+                  <h4 class="text-sm font-semibold text-gray-700 mb-2">Participación</h4>
+                  <div class="flex items-start gap-3">
+                    <div class="flex-shrink-0">
+                      <svg width="80" height="80" viewBox="0 0 36 36">
+                        <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#D1D5DB" stroke-width="3.5" 
+                                stroke-dasharray="{{ p.pct_not_answered }} 100" 
+                                stroke-dashoffset="{{ p.offset_not_answered }}" 
+                                transform="rotate(-90 18 18)"></circle>
+                        <circle cx="18" cy="18" r="15.915" fill="transparent" stroke="#6EE7B7" stroke-width="3.5" 
+                                stroke-dasharray="{{ p.pct_answered }} 100" 
+                                stroke-dashoffset="0" 
+                                transform="rotate(-90 18 18)"></circle>
+                      </svg>
                     </div>
-                    {% if r.feedback %}
-                      <div class="mt-2 text-sm text-gray-700 bg-gray-50 p-2 rounded">Feedback: {{ r.feedback }}</div>
-                    {% endif %}
-                    <div class="mt-3">
-                      <button type="button" onclick="event.stopPropagation();" class="px-2 py-1 bg-indigo-500 text-white rounded text-sm open-grade-modal" data-response-id="{{ r.id }}" data-score="{{ r.score|default_if_none:'' }}" data-feedback="{{ r.feedback|default_if_none:''|escapejs }}">Corregir</button>
+                    <div class="text-xs text-gray-600 leading-tight">
+                      <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-green-300 rounded-full"></span><span>Respondidas: {{ p.answered }}</span></div>
+                      <div class="flex items-center gap-1"><span class="inline-block w-2 h-2 bg-gray-300 rounded-full"></span><span>Sin responder: {{ p.not_answered }}</span></div>
+                      <div class="mt-1 pt-1 border-t border-gray-300 font-semibold">Total: {{ p.total }} ({{ p.pct_answered|floatformat:0 }}%)</div>
                     </div>
                   </div>
                 </div>
-              </li>
+                {% endif %}
+                
+              </div>
+            </div>
+          {% endif %}
+          {% endwith %}
+          
+          <ul class="divide-y text-sm text-gray-700">
+            {% for r in student.responses %}
+              {% include 'dashboard/partials/response_item.html' with r=r students=students show_student_name=False is_general_room=selected_room.teacher_id|yesno:"False,True,False" %}
             {% endfor %}
           </ul>
         {% else %}

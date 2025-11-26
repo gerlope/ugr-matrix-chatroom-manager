@@ -1,8 +1,4 @@
 {% comment %} Questions panel: list of questions, controls and per-question UI {% endcomment %}
-<script>
-  window.__lsGet = function(k){ try { return localStorage.getItem(k); } catch(e) { return null; } };
-  window.__lsSet = function(k,v){ try { localStorage.setItem(k,v); } catch(e) { /* ignore */ } };
-</script>
 <div x-data="{open:false}" x-init="open = __lsGet('questions_panel_open') === 'true'" class="bg-white shadow rounded-lg mb-6">
   <div role="button" tabindex="0" class="flex justify-between items-center p-4 cursor-pointer" 
       @click="if(!$event.target.closest('.no-toggle')){ open = !open; __lsSet('questions_panel_open', open ? 'true' : 'false') }"
@@ -12,6 +8,17 @@
     <div class="flex items-center gap-3">
       <div class="text-sm text-gray-600">{{ questions_list|length }} preguntas</div>
       <button type="button" @click.stop="$store.modal.createQuestionModal = true" class="no-toggle px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition" {% if selected_room.teacher_id != teacher.id %}style="display:none"{% endif %}>Crear</button>
+      <button 
+        type="button"
+        @click.stop="downloadQuestionsJSON()" 
+        class="no-toggle px-3 py-1.5 bg-blue-500 hover:bg-blue-600 text-white text-sm rounded transition flex items-center gap-1"
+        title="Descargar datos de preguntas como JSON"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        JSON
+      </button>
       <button type="button" aria-label="Alternar preguntas" class="p-1" @click.stop="open = !open; __lsSet('questions_panel_open', open ? 'true' : 'false')">
         <svg :class="open ? 'transform rotate-180' : ''" class="w-5 h-5 text-gray-500 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
       </button>
@@ -45,10 +52,12 @@
         function applyRevealForQuestion(qEl, show){
           const correctInd = qEl.querySelectorAll('.correct-indicator');
           const expectedEls = qEl.querySelectorAll('.expected-answer');
+          const respNeutral = qEl.querySelectorAll('.response-neutral');
           const respCorrect = qEl.querySelectorAll('.response-correct');
           const respIncorrect = qEl.querySelectorAll('.response-incorrect');
           correctInd.forEach(el => el.style.display = show ? '' : 'none');
-          expectedEls.forEach(el => el.style.display = show ? '' : 'none');
+          expectedEls.forEach(el => el.style.display = show ? 'block' : 'none');
+          respNeutral.forEach(el => el.style.display = show ? 'none' : '');
           respCorrect.forEach(el => el.style.display = show ? '' : 'none');
           respIncorrect.forEach(el => el.style.display = show ? '' : 'none');
         }

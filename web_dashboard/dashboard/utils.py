@@ -6,10 +6,14 @@ This module centralizes logic used by the dashboard views for:
  - Overlap validation for teacher availability intervals
  - Preparing common schedule context
 
-The original implementation mixed networking, aggregation and presentation logic
-in large monolithic functions. The refactor below splits responsibilities into
-small helpers while keeping public function names (``build_availability_display``
-and ``get_data_for_dashboard``) stable to avoid widespread code changes.
+Refactored structure:
+ - Availability helpers: build_availability_display, check_availability_overlap
+ - Moodle data fetchers: fetch_moodle_courses, fetch_moodle_groups, fetch_enrolled_students
+ - Question response enrichment: extract_expected_answers, build_selected_options,
+   enrich_response_with_options, attach_student_responses
+ - Student data building: build_student_entry
+ - Room data assembly: assemble_questions_for_room
+ - High-level aggregation: get_data_for_dashboard, process_course_data
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +22,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import requests
 from django.db.models import Max, Sum
 from django.utils import timezone
+import datetime
 
 from .models import (
     ExternalUser,
@@ -32,6 +37,75 @@ from .models import (
 from config import MOODLE_TOKEN, MOODLE_URL
 
 WEEK_DAYS_ES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+# ---------------------------------------------------------------------------
+# Score distribution helpers
+# ---------------------------------------------------------------------------
+
+def _calculate_score_distribution(responses_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Calculate score distribution with percentages and offsets for pie chart.
+    Only includes graded responses (is_graded=True)."""
+    dist = {'bracket_0_49': 0, 'bracket_50_74': 0, 'bracket_75_99': 0, 'bracket_100': 0, 'no_score': 0}
+    
+    # Filter to only graded responses
+    graded_responses = [er for er in responses_list if er.get('is_graded')]
+    
+    for er in graded_responses:
+        score = er.get('score')
+        if score is None:
+            dist['no_score'] += 1
+        elif score == 100:
+            dist['bracket_100'] += 1
+        elif score >= 75:
+            dist['bracket_75_99'] += 1
+        elif score >= 50:
+            dist['bracket_50_74'] += 1
+        else:
+            dist['bracket_0_49'] += 1
+    
+    total = sum(dist.values())
+    dist['total'] = total
+    
+    if total > 0:
+        dist['pct_0_49'] = (dist['bracket_0_49'] / total) * 100
+        dist['pct_50_74'] = (dist['bracket_50_74'] / total) * 100
+        dist['pct_75_99'] = (dist['bracket_75_99'] / total) * 100
+        dist['pct_100'] = (dist['bracket_100'] / total) * 100
+        dist['pct_no_score'] = (dist['no_score'] / total) * 100
+        
+        dist['offset_50_74'] = -dist['pct_0_49']
+        dist['offset_75_99'] = -(dist['pct_0_49'] + dist['pct_50_74'])
+        dist['offset_100'] = -(dist['pct_0_49'] + dist['pct_50_74'] + dist['pct_75_99'])
+        dist['offset_no_score'] = -(dist['pct_0_49'] + dist['pct_50_74'] + dist['pct_75_99'] + dist['pct_100'])
+        
+        scores = [er.get('score') for er in graded_responses if er.get('score') is not None]
+        dist['average'] = round(sum(scores) / len(scores), 1) if scores else None
+    else:
+        dist['average'] = None
+    
+    return dist
+
+
+def _calculate_participation(answered: int, total: int) -> Dict[str, Any]:
+    """Calculate participation percentages for pie chart."""
+    not_answered = total - answered
+    participation = {
+        'answered': answered,
+        'not_answered': not_answered,
+        'total': total,
+    }
+    
+    if total > 0:
+        participation['pct_answered'] = (answered / total) * 100
+        participation['pct_not_answered'] = (not_answered / total) * 100
+        participation['offset_not_answered'] = -participation['pct_answered']
+    else:
+        participation['pct_answered'] = 0
+        participation['pct_not_answered'] = 0
+        participation['offset_not_answered'] = 0
+    
+    return participation
+
 
 # ---------------------------------------------------------------------------
 # Availability helpers
@@ -171,6 +245,27 @@ def fetch_moodle_groups(course_id: int) -> List[Dict[str, Any]]:
     return [{'id': g.get('id'), 'name': g.get('name')} for g in groups_data]
 
 
+def fetch_moodle_group_members(group_id: int) -> List[int]:
+    """Fetch members of a specific Moodle group."""
+    params = {
+        'wstoken': MOODLE_TOKEN,
+        'wsfunction': 'core_group_get_group_members',
+        'moodlewsrestformat': 'json',
+        'groupids[0]': group_id,
+    }
+    try:
+        resp = requests.get(_moodle_endpoint(), params=params, timeout=20)
+        resp.raise_for_status()
+        data = resp.json() or []
+        # API returns list of groups, each with userids array
+        if data and len(data) > 0:
+            return data[0].get('userids', [])
+        return []
+    except Exception as e:
+        print(f"[Dashboard] Error fetching group members for group {group_id}: {e}")
+        return []
+
+
 def fetch_enrolled_students(course_id: int) -> List[Dict[str, Any]]:
     params = {
         'wstoken': MOODLE_TOKEN,
@@ -187,6 +282,198 @@ def fetch_enrolled_students(course_id: int) -> List[Dict[str, Any]]:
         return []
 
 
+# ---------------------------------------------------------------------------
+# Question response enrichment helpers
+# ---------------------------------------------------------------------------
+
+def extract_expected_answers(options: List[QuestionOption]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """Extract expected text (for short_answer/numeric) and expected options (for multiple_choice)."""
+    expected_text = None
+    expected_options = []
+    
+    try:
+        for o in options:
+            # short_answer/numeric expected value stored under option_key 'ANSWER'
+            if getattr(o, 'option_key', None) == 'ANSWER' and getattr(o, 'text', None):
+                expected_text = o.text
+        
+        # for multiple choice, collect correct options but skip ANSWER pseudo-option
+        for o in options:
+            try:
+                if getattr(o, 'is_correct', False) and getattr(o, 'option_key', None) != 'ANSWER':
+                    expected_options.append({
+                        'id': getattr(o, 'id', None),
+                        'option_key': getattr(o, 'option_key', None),
+                        'text': getattr(o, 'text', None)
+                    })
+            except Exception:
+                continue
+    except Exception:
+        expected_text = None
+        expected_options = []
+    
+    return expected_text, expected_options
+
+
+def build_selected_options(response: Dict[str, Any], question_options: List[QuestionOption]) -> List[Dict[str, Any]]:
+    """Build selected options list by matching response option_ids against question options."""
+    selected_options = []
+    
+    try:
+        # Ensure we have a list of option IDs (handle both option_id and option_ids)
+        resp_opt_ids = response.get('option_ids') or ([] if response.get('option_id') is None else [response.get('option_id')])
+        
+        if resp_opt_ids:
+            for o in question_options:
+                opt_id = getattr(o, 'id', None)
+                # Compare as integers to handle type mismatches
+                if opt_id and any(int(opt_id) == int(rid) for rid in resp_opt_ids if rid is not None):
+                    selected_options.append({
+                        'id': opt_id,
+                        'option_key': getattr(o, 'option_key', None),
+                        'text': getattr(o, 'text', None),
+                        'is_correct': getattr(o, 'is_correct', False),
+                    })
+    except Exception as e:
+        print(f"[WARN] Error building selected_options for response {response.get('id')}: {e}")
+        selected_options = []
+    
+    return selected_options
+
+
+def build_student_entry(student_db: ExternalUser, enrolled_data: List[Dict[str, Any]], 
+                        reactions: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build a standardized student entry dict from DB and Moodle data."""
+    moodle_user = next((s for s in enrolled_data if s['id'] == student_db.moodle_id), None)
+    
+    return {
+        'id': student_db.id,
+        'moodle_id': student_db.moodle_id,
+        'matrix_id': student_db.matrix_id,
+        'full_name': moodle_user.get('fullname', None) if moodle_user else 'Desconocido',
+        'reactions': [r for r in reactions if r['student_id'] == student_db.id],
+        'groups': moodle_user.get('groups', None) if moodle_user else []
+    }
+
+
+def enrich_response_with_options(response: Dict[str, Any], question_options: List[QuestionOption], 
+                                   expected_text: Optional[str], expected_options: List[Dict[str, Any]], 
+                                   question_type: Optional[str] = None) -> Dict[str, Any]:
+    """Enrich a response dict with expected answers and selected options."""
+    return {
+        **response,
+        'expected_text': expected_text,
+        'expected_options': expected_options,
+        'selected_options': build_selected_options(response, question_options),
+        'question_type': question_type,
+    }
+
+
+def attach_student_responses(students: List[Dict[str, Any]], questions: List[Dict[str, Any]]) -> None:
+    """Attach aggregated responses to each student and enrich per-question responses.
+    
+    Modifies students and questions lists in-place.
+    """
+    student_responses_map = {}
+    student_names_map = {s.get('id'): s.get('full_name') for s in students}
+    student_answered_questions = {}
+    
+    # Build a map of room_id to room moodle_group for filtering
+    room_group_map = {}
+    for qentry in questions:
+        qobj = qentry.get('question')
+        if qobj and hasattr(qobj, 'room_id'):
+            try:
+                from .models import Room
+                room = Room.objects.using('bot_db').get(id=qobj.room_id)
+                room_group_map[qobj.room_id] = getattr(room, 'moodle_group', None)
+            except Exception:
+                room_group_map[qobj.room_id] = None
+    
+    # Build enriched responses map
+    for qentry in questions:
+        qobj = qentry.get('question')
+        qtitle = getattr(qobj, 'title', None) or f"Pregunta {getattr(qobj, 'id', '')}"
+        expected_text, expected_options = extract_expected_answers(qentry.get('options', []))
+
+        for r in qentry.get('responses', []):
+            student_id = r.get('student_id')
+            qid = getattr(qobj, 'id', None)
+            
+            if student_id and qid:
+                student_answered_questions.setdefault(student_id, set()).add(qid)
+            
+            enriched_resp = {
+                **r,
+                'question_title': qtitle,
+                'question_type': getattr(qobj, 'qtype', None),
+                'expected_text': expected_text,
+                'expected_options': expected_options,
+                'selected_options': build_selected_options(r, qentry.get('options', [])),
+                'student_full_name': student_names_map.get(student_id),
+            }
+            student_responses_map.setdefault(student_id, []).append(enriched_resp)
+
+    enriched_by_id = {
+        enr.get('id'): enr
+        for resp_list in student_responses_map.values()
+        for enr in resp_list
+    }
+
+    # Attach sorted responses to each student
+    for s in students:
+        s_db_id = s.get('id')
+        rlist = student_responses_map.get(s_db_id, [])
+        try:
+            rlist.sort(key=lambda x: x.get('submitted_at') or datetime.datetime.min, reverse=True)
+        except Exception:
+            pass
+        s['responses'] = rlist
+        
+        # Calculate score distributions
+        s['score_distribution'] = _calculate_score_distribution(rlist)
+        manual_graded = [er for er in rlist if er.get('grader_id') is not None]
+        s['score_distribution_manual'] = _calculate_score_distribution(manual_graded)
+        
+        # Calculate participation (excluding questions from group-restricted rooms student is not part of)
+        student_groups = s.get('groups', []) or []
+        student_group_ids = {g.get('id') for g in student_groups if isinstance(g, dict) and 'id' in g}
+        
+        # Filter questions to only count those accessible to this student
+        accessible_questions = []
+        for qentry in questions:
+            qobj = qentry.get('question')
+            if qobj and hasattr(qobj, 'room_id'):
+                room_moodle_group = room_group_map.get(qobj.room_id)
+                if room_moodle_group:
+                    # Room is restricted to a moodle group
+                    # Check if student is in that group (by ID or name)
+                    try:
+                        group_id = int(room_moodle_group)
+                        if group_id in student_group_ids:
+                            accessible_questions.append(qentry)
+                    except (ValueError, TypeError):
+                        # moodle_group is a name, check by name
+                        if any(g.get('name') == room_moodle_group for g in student_groups):
+                            accessible_questions.append(qentry)
+                else:
+                    # No group restriction, question is accessible
+                    accessible_questions.append(qentry)
+        
+        total_questions = len(accessible_questions)
+        answered_questions = len(student_answered_questions.get(s_db_id, set()))
+        s['participation'] = _calculate_participation(answered_questions, total_questions)
+    
+    # Enrich per-question responses
+    for entry in questions:
+        for r in entry.get('responses', []):
+            enriched = enriched_by_id.get(r.get('id'))
+            if enriched:
+                r.update({k: v for k, v in enriched.items() if k not in ['id', 'question_type']})
+                if 'question_type' not in r:
+                    r['question_type'] = enriched.get('question_type')
+
+
 def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str, Any]]:
     """Collect questions/options/responses for a given room.
 
@@ -194,6 +481,32 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
     """
     if selected_room is None:
         return []
+    
+    # Fetch Moodle group student IDs if room is bound to a group
+    moodle_group_student_ids = None
+    if selected_room.moodle_group:
+        try:
+            # Get course ID from room's moodle_course_id
+            if hasattr(selected_room, 'moodle_course_id') and selected_room.moodle_course_id:
+                groups = fetch_moodle_groups(selected_room.moodle_course_id)
+                group_obj = next((g for g in groups if g['name'] == selected_room.moodle_group), None)
+                if not group_obj:
+                    try:
+                        group_id = int(selected_room.moodle_group)
+                        group_obj = next((g for g in groups if g['id'] == group_id), None)
+                    except (ValueError, TypeError):
+                        pass
+                
+                if group_obj:
+                    group_member_ids = fetch_moodle_group_members(group_obj['id'])
+                    enrolled_data = fetch_enrolled_students(selected_room.moodle_course_id)
+                    group_enrolled_data = [s for s in enrolled_data if s['id'] in group_member_ids and s.get('roles') and any(r['shortname'] == 'student' for r in s['roles'])]
+                    student_moodle_ids = [s['id'] for s in group_enrolled_data]
+                    student_db_data = ExternalUser.objects.using('bot_db').filter(moodle_id__in=student_moodle_ids)
+                    moodle_group_student_ids = [s.id for s in student_db_data]
+        except Exception as e:
+            print(f"[WARN] Could not fetch group members for room {selected_room.shortcode}: {e}")
+    
     try:
         qs = list(Question.objects.using('bot_db').filter(room_id=selected_room.id).order_by('-created_at'))
         qids = [q.id for q in qs]
@@ -232,6 +545,8 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                 'before_start': before_start,
                 'after_end': after_end,
                 'responses': [],
+                'score_distribution': {'bracket_0_49': 0, 'bracket_50_74': 0, 'bracket_75_99': 0, 'bracket_100': 0, 'no_score': 0, 'total': 0},
+                'score_distribution_manual': {'bracket_0_49': 0, 'bracket_50_74': 0, 'bracket_75_99': 0, 'bracket_100': 0, 'no_score': 0, 'total': 0},
             })
 
         # Attach responses
@@ -260,8 +575,15 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                     for gu in gusers:
                         graders_map[gu.id] = gu
 
+                # Build a map of question_id to question object for getting question_type
+                questions_map = {q.id: q for q in qs}
+
                 q_responses: Dict[int, List[Dict[str, Any]]] = {}
                 for r in resp_qs:
+                    # Get the question object to access its type
+                    question_obj = questions_map.get(r.question_id)
+                    qtype = getattr(question_obj, 'qtype', None) if question_obj else None
+                    
                     q_responses.setdefault(r.question_id, []).append({
                         'id': r.id,
                         'student_id': r.student_id,
@@ -276,12 +598,72 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                         'is_graded': getattr(r, 'is_graded', False),
                         'grader_id': getattr(r, 'grader_id', None),
                         'grader': graders_map.get(getattr(r, 'grader_id', None)),
+                        'room_id': getattr(selected_room, 'id', None),
+                        'room_shortcode': getattr(selected_room, 'shortcode', None),
                         'feedback': getattr(r, 'feedback', None),
+                        'question_type': qtype,
                     })
 
                 for entry in selected_questions:
                     qobj = entry['question']
-                    entry['responses'] = q_responses.get(qobj.id, [])
+                    # Ensure responses for each question are ordered by submitted_at (most recent first)
+                    resp_list = q_responses.get(qobj.id, []) or []
+                    try:
+                        resp_list.sort(key=lambda x: x.get('submitted_at') or datetime.datetime.min, reverse=True)
+                    except Exception:
+                        pass
+                    
+                    # Enrich responses
+                    expected_text, expected_options = extract_expected_answers(entry.get('options', []))
+                    qtype = getattr(qobj, 'qtype', None)
+                    
+                    enriched_resp_list = [
+                        enrich_response_with_options(r, entry.get('options', []), expected_text, expected_options, qtype)
+                        for r in resp_list
+                    ]
+                    entry['responses'] = enriched_resp_list
+                    
+                    # Calculate score distributions
+                    entry['score_distribution'] = _calculate_score_distribution(enriched_resp_list)
+                    manual_graded = [er for er in enriched_resp_list if er.get('grader_id') is not None]
+                    entry['score_distribution_manual'] = _calculate_score_distribution(manual_graded)
+                    
+                    # Calculate participation distribution (only for rooms bound to Moodle groups)
+                    if moodle_group_student_ids is not None:
+                        students_who_answered = len(set(er.get('student_id') for er in enriched_resp_list if er.get('student_id')))
+                        entry['participation_distribution'] = _calculate_participation(students_who_answered, len(moodle_group_student_ids))
+                    else:
+                        entry['participation_distribution'] = None
+                    
+                    # Calculate submission count distribution (only for questions with allow_multiple_submissions)
+                    if getattr(qobj, 'allow_multiple_submissions', False):
+                        student_submission_counts = {}
+                        for er in enriched_resp_list:
+                            sid = er.get('student_id')
+                            if sid:
+                                student_submission_counts[sid] = student_submission_counts.get(sid, 0) + 1
+                        
+                        submission_dist = {'bracket_1': 0, 'bracket_2': 0, 'bracket_3': 0, 'bracket_4': 0, 'bracket_5_plus': 0}
+                        for count in student_submission_counts.values():
+                            bracket_key = f'bracket_{count}' if count <= 4 else 'bracket_5_plus'
+                            submission_dist[bracket_key] += 1
+                        
+                        total_students = sum(submission_dist.values())
+                        submission_dist['total'] = total_students
+                        
+                        if total_students > 0:
+                            for i in range(1, 5):
+                                submission_dist[f'pct_{i}'] = (submission_dist[f'bracket_{i}'] / total_students) * 100
+                            submission_dist['pct_5_plus'] = (submission_dist['bracket_5_plus'] / total_students) * 100
+                            
+                            submission_dist['offset_2'] = -submission_dist['pct_1']
+                            submission_dist['offset_3'] = -(submission_dist['pct_1'] + submission_dist['pct_2'])
+                            submission_dist['offset_4'] = -(submission_dist['pct_1'] + submission_dist['pct_2'] + submission_dist['pct_3'])
+                            submission_dist['offset_5_plus'] = -(submission_dist['pct_1'] + submission_dist['pct_2'] + submission_dist['pct_3'] + submission_dist['pct_4'])
+                        
+                        entry['submission_distribution'] = submission_dist
+                    else:
+                        entry['submission_distribution'] = None
             except Exception as e:
                 print(f"[WARN] Could not fetch question responses: {e}")
         return selected_questions
@@ -393,6 +775,7 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
         enrolled_data = fetch_enrolled_students(course_id)
 
         if selected_room.teacher_id is None and selected_room.shortcode == course.get('shortname'):
+            # General room: aggregate reactions and students from all course rooms
             selected_reactions = (Reaction.objects.using('bot_db').filter(teacher_id=teacher['id'],
                                                                               room_id__in=[room.id for room in course_rooms + ([general_room] if general_room else [])])
                                                                       .values('student_id', 'emoji')
@@ -404,16 +787,10 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
             student_db_data = ExternalUser.objects.using('bot_db').filter(moodle_id__in=student_moodle_ids)
             
             for student in student_db_data:
-                moodle_user = next((s for s in enrolled_data if s['id'] == student.moodle_id), None)
-                selected_students.append({
-                    'id': student.id,
-                    'moodle_id': student.moodle_id,
-                    'matrix_id': student.matrix_id,
-                    'full_name': moodle_user.get('fullname', None) if moodle_user else 'Desconocido',
-                    'reactions': [r for r in selected_reactions if r['student_id'] == student.id],
-                    'groups': moodle_user.get('groups', None) if moodle_user else []
-                })   
+                selected_students.append(build_student_entry(student, enrolled_data, selected_reactions))
+                
         elif selected_room.teacher_id == teacher['id']:
+            # Specific teacher room: get reactions and students for this room only
             selected_reactions = (Reaction.objects.using('bot_db').filter(teacher_id=teacher['id'], 
                                                                               room_id=selected_room_id)
                                                                       .values('student_id', 'emoji')
@@ -421,19 +798,42 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
                                                                                 latest_update=Max('last_updated')))
             
             selected_students = []
-            participants_matrix_ids = [] #GET FROM MATRIX API
-            student_db_data = ExternalUser.objects.using('bot_db').filter(matrix_id__in=participants_matrix_ids)
+            
+            # Check if room is bound to a Moodle group
+            if selected_room.moodle_group:
+                # Room bound to Moodle group: fetch users from that group only
+                try:
+                    # Try to find group by name first, then by ID
+                    group_obj = next((g for g in groups if g['name'] == selected_room.moodle_group), None)
+                    if not group_obj:
+                        # Try matching by ID if moodle_group is numeric
+                        try:
+                            group_id = int(selected_room.moodle_group)
+                            group_obj = next((g for g in groups if g['id'] == group_id), None)
+                        except (ValueError, TypeError):
+                            pass
+                    
+                    if group_obj:
+                        group_member_ids = fetch_moodle_group_members(group_obj['id'])
+                        # Filter enrolled students to only those in the group
+                        group_enrolled_data = [s for s in enrolled_data if s['id'] in group_member_ids and s.get('roles') and any(r['shortname'] == 'student' for r in s['roles'])]
+                        student_moodle_ids = [s['id'] for s in group_enrolled_data]
+                        student_db_data = ExternalUser.objects.using('bot_db').filter(moodle_id__in=student_moodle_ids)
+                        
+                        for student in student_db_data:
+                            selected_students.append(build_student_entry(student, enrolled_data, selected_reactions))
+                except Exception as e:
+                    print(f"[Dashboard] Error loading group members for room {selected_room_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                # Room not bound to group: use Matrix API (placeholder)
+                participants_matrix_ids = []  # GET FROM MATRIX API
+                student_db_data = ExternalUser.objects.using('bot_db').filter(matrix_id__in=participants_matrix_ids)
 
-            for student in student_db_data:
-                moodle_user = next((s for s in enrolled_data if s['id'] == student.moodle_id), None)
-                selected_students.append({
-                    'id': student.id,
-                    'moodle_id': student.moodle_id,
-                    'matrix_id': student.matrix_id,
-                    'full_name': moodle_user.get('fullname', None) if moodle_user else 'Desconocido',
-                    'reactions': [r for r in selected_reactions if r['student_id'] == student.id],
-                    'groups': moodle_user.get('groups', None) if moodle_user else []
-                })
+                for student in student_db_data:
+                    selected_students.append(build_student_entry(student, enrolled_data, selected_reactions))
+                
         # Fetch all questions for this selected room (including inactive / manual flags)
         # If the selected room is the course's general room, include questions from
         # all course rooms (course_rooms) plus the general room so that the
@@ -441,6 +841,7 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
         selected_questions = []
         try:
             if selected_room and selected_room.teacher_id is None and selected_room.shortcode == course.get('shortname'):
+                # General room: aggregate questions from all course rooms
                 rooms_to_assemble = list(course_rooms)
                 if general_room:
                     rooms_to_assemble.append(general_room)
@@ -448,78 +849,22 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
                     try:
                         selected_questions.extend(assemble_questions_for_room(rm, teacher['id']) or [])
                     except Exception:
-                        # ignore per-room failures and continue
-                        continue
+                        continue  # ignore per-room failures and continue
             else:
+                # Specific room: get questions for this room only
                 selected_questions = assemble_questions_for_room(selected_room, teacher['id'])
         except Exception:
             selected_questions = []
 
-        # If we have a students list, attach each student's own responses (aggregated across questions)
-        try:
-            if selected_students is not None and selected_questions:
-                # Build a map student_id -> list of responses
-                student_responses_map = {}
-                for qentry in selected_questions:
-                    qobj = qentry.get('question')
-                    qtitle = getattr(qobj, 'title', None) or f"Pregunta {getattr(qobj, 'id', '')}"
-                    # Collect expected answers from question options when available
-                    expected_text = None
-                    expected_options = []
-                    try:
-                        for o in qentry.get('options', []) or []:
-                            # short_answer/numeric expected value stored under option_key 'ANSWER'
-                            if getattr(o, 'option_key', None) == 'ANSWER' and getattr(o, 'text', None):
-                                expected_text = o.text
-                        # for multiple choice, collect correct options but skip ANSWER pseudo-option
-                        for o in qentry.get('options', []) or []:
-                            try:
-                                if getattr(o, 'is_correct', False) and getattr(o, 'option_key', None) != 'ANSWER':
-                                    expected_options.append({'id': getattr(o, 'id', None), 'option_key': getattr(o, 'option_key', None), 'text': getattr(o, 'text', None)})
-                            except Exception:
-                                continue
-                    except Exception:
-                        expected_text = None
-                        expected_options = []
-
-                    for r in qentry.get('responses', []):
-                        # Build selected options with id/key/text by matching option_ids against question options
-                        selected_options = []
-                        try:
-                            resp_opt_ids = r.get('option_ids') or ([] if r.get('option_id') is None else [r.get('option_id')])
-                            if resp_opt_ids:
-                                for o in qentry.get('options', []) or []:
-                                    if getattr(o, 'id', None) in resp_opt_ids:
-                                        selected_options.append({'id': getattr(o, 'id', None), 'option_key': getattr(o, 'option_key', None), 'text': getattr(o, 'text', None)})
-                        except Exception:
-                            selected_options = []
-
-                        student_responses_map.setdefault(r.get('student_id'), []).append({
-                            'id': r.get('id'),
-                            'question_id': getattr(qobj, 'id', None),
-                            'question_title': qtitle,
-                            'option_id': r.get('option_id'),
-                            'option_key': r.get('option_key'),
-                            'option_ids': r.get('option_ids'),
-                            'option_keys': r.get('option_keys'),
-                            'answer_text': r.get('answer_text'),
-                            'submitted_at': r.get('submitted_at'),
-                            'score': r.get('score'),
-                            'is_graded': r.get('is_graded'),
-                            'grader': r.get('grader'),
-                            'feedback': r.get('feedback'),
-                            'expected_text': expected_text,
-                            'expected_options': expected_options,
-                            'selected_options': selected_options,
-                        })
-
-                # Attach to each student entry by DB id
-                for s in selected_students:
-                    s_db_id = s.get('id')
-                    s['responses'] = student_responses_map.get(s_db_id, [])
-        except Exception:
-            # best-effort; do not break dashboard assembly on errors here
-            pass
+        # Attach student responses if we have both students and questions
+        if selected_students is not None and selected_questions:
+            try:
+                attach_student_responses(selected_students, selected_questions)
+            except Exception as e:
+                print(f"[ERROR] Failed to attach student responses: {e}")
+                import traceback
+                traceback.print_exc()
+                pass  # best-effort; do not break dashboard assembly on errors
     
     thread_results[index] = {
         'id': course_id,
