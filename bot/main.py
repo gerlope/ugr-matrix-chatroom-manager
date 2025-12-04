@@ -17,12 +17,12 @@ sys.modules["config"] = _config
 from core.client_manager import create_client
 from core.command_registry import load_commands
 from core.event_router import register_event_handlers
-from core.db.constants import DB_MODULES
+from core.db.constants import get_db_modules
 
 from config import DB_TYPE
 
 async def main():
-    db_conn = DB_MODULES[DB_TYPE]["conn"]
+    db_conn = get_db_modules()[DB_TYPE]["conn"]
     await db_conn.connect()
     client = await create_client()
     load_commands()
@@ -30,11 +30,25 @@ async def main():
 
     print("[*] Bot iniciado — escuchando mensajes...")
     try:
-        await client.sync_forever(timeout=30000, full_state=True)
+        from mautrix.types import Filter, RoomFilter, RoomEventFilter
+        
+        # Create a filter that includes all room messages
+        sync_filter = Filter(
+            room=RoomFilter(
+                timeline=RoomEventFilter(
+                    types=["m.room.message", "m.room.member", "m.reaction", "m.room.redaction"]
+                )
+            )
+        )
+        
+        # Perform an initial sync to get current state, then start listening for new events
+        await client.sync(timeout=0, full_state=False, set_presence="online")
+        print("[+] Sincronización inicial completada, procesando solo eventos nuevos")
+        
+        await client.start(filter_data=sync_filter)
     except KeyboardInterrupt:
         print("[*] Bot detenido por usuario")
     finally:
-        await client.close()
         await db_conn.close()
 
 

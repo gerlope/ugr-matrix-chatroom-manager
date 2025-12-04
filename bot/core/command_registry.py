@@ -45,7 +45,7 @@ async def execute_command(client, room_id, event, body):
 
     if cmd in COMMANDS:
         try:
-            await COMMANDS[cmd].run(client, room_id, event, args)
+            await COMMANDS[cmd]["module"].run(client, room_id, event, args)
         except Exception as e:
             await client.send_text(room_id, f"⚠️ Error ejecutando comando `{cmd}`: {e}")
     else:

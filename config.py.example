@@ -1,4 +1,5 @@
 HOMESERVER = "https://matrix.example.org"
+SERVER_NAME = "example.org"
 USERNAME = "@bot:example.org"
 PASSWORD = "secret_password"
 COMMAND_PREFIX = "!"

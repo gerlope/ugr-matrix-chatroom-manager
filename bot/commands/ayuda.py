@@ -10,11 +10,11 @@ async def run(client, room_id, event, args):
     for name, info in sorted(COMMANDS.items()):
         usage = info["usage"]
         desc = info["description"]
-        lines.append(f"• **{usage}** — {desc}")
+        lines.append(f"• {usage} — {desc}")
 
     help_text = "\n".join(lines)
 
     await client.send_text(
         room_id,
-        f"📘 **Comandos disponibles:**\n\n{help_text}\n\nUsa `!<comando>` para ejecutarlos."
+        f"📘 Comandos disponibles:\n\n{help_text}\n\nUsa !<comando> para ejecutarlos."
     )

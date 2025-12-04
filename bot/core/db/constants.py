@@ -1,9 +1,19 @@
 # core/db/constants.py
-from core.db.postgres import conn as pg_conn, queries as pg_queries
 
-DB_MODULES = {
-    "postgres": {"conn": pg_conn, "queries": pg_queries},
-}
+# Import modules lazily to avoid circular imports
+def _get_db_modules():
+    from core.db.postgres import conn as pg_conn, queries as pg_queries
+    return {
+        "postgres": {"conn": pg_conn, "queries": pg_queries},
+    }
+
+DB_MODULES = None  # Will be initialized on first access
+
+def get_db_modules():
+    global DB_MODULES
+    if DB_MODULES is None:
+        DB_MODULES = _get_db_modules()
+    return DB_MODULES
 
 # Users
 TABLE_USERS = "users"

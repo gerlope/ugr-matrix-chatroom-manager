@@ -20,7 +20,7 @@ from .models import Room, ExternalUser, TeacherAvailability
 from .forms import ExternalLoginForm, CreateRoomForm, CreateQuestionForm, GradeResponseForm
 from .models import Question, QuestionOption, QuestionResponse
 from django.utils import timezone
-from config import HOMESERVER
+from config import SERVER_NAME
 from .models import QuestionResponse
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ def external_login(request):
     if request.method == "POST":
         form = ExternalLoginForm(request.POST)
         if form.is_valid():
-            username = "@" + form.cleaned_data['username'] + ":" + HOMESERVER.split("//")[1].split("/")[0]
+            username = "@" + form.cleaned_data['username'] + ":" + SERVER_NAME
 
             try:
                 teacher = ExternalUser.objects.using('bot_db').filter(matrix_id=username).first()

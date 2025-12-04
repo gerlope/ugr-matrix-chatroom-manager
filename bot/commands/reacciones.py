@@ -2,11 +2,11 @@ USAGE = "!reacciones"
 DESCRIPTION = "Muestra las reacciones dadas (profesores) o recibidas (alumnos)."
 
 from core.db.constants import *
-from core.db.constants import DB_MODULES
+from core.db.constants import get_db_modules
 from config import DB_TYPE
 
-async def run(client, room_id, event):
-    db = DB_MODULES[DB_TYPE]["queries"]
+async def run(client, room_id, event, args):
+    db = get_db_modules()[DB_TYPE]["queries"]
 
     mxid = event.sender
     user = await db.get_user_by_matrix_id(mxid)
@@ -21,7 +21,7 @@ async def run(client, room_id, event):
         if not reactions:
             texto = "❌ No has puesto ninguna reacción aún."
         else:
-            texto = "❤️ **Reacciones puestas:**\n\n"
+            texto = "❤️ Reacciones puestas:\n\n"
             last_course = None
             last_student = None
             for r in reactions:
@@ -29,7 +29,7 @@ async def run(client, room_id, event):
                     if last_course is not None:
                         texto += "\n"
                     last_course = r[COL_REACTION_ROOM_ID]
-                    texto += f"📚 Sala: {r[COL_REACTION_ROOM_ID]}\n"
+                    texto += f"📚 Sala: {r[JOINED_REACTION_ROOM_SHORTCODE]}\n"
                     last_student = None
                 if last_student != r[JOINED_REACTION_STUDENT_MATRIX_ID]:
                     if last_student is not None:
@@ -42,7 +42,7 @@ async def run(client, room_id, event):
         if not reactions:
             texto = "❌ No has recibido reacciones aún."
         else:
-            texto = "❤️ **Reacciones recibidas:**\n\n"
+            texto = "❤️ Reacciones recibidas:\n\n"
             last_course = None
             last_teacher = None
             for r in reactions:
@@ -50,7 +50,7 @@ async def run(client, room_id, event):
                     if last_course is not None:
                         texto += "\n"
                     last_course = r[COL_REACTION_ROOM_ID]
-                    texto += f"📚 Sala: {r[COL_REACTION_ROOM_ID]}\n"
+                    texto += f"📚 Sala: {r[JOINED_REACTION_ROOM_SHORTCODE]}\n"
                     last_teacher = None
                 if last_teacher != r[JOINED_REACTION_TEACHER_MATRIX_ID]:
                     if last_teacher is not None:

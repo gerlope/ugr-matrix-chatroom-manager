@@ -2,19 +2,19 @@
 
 from mautrix.types import EventType
 from core.db.constants import COL_USER_IS_TEACHER, COL_ROOM_MOODLE_COURSE_ID
-from core.db.constants import DB_MODULES
+from core.db.constants import get_db_modules
 from config import DB_TYPE
 
 def register(client):
-    @client.syncer.on(EventType.REACTION)
-    async def on_add_reaction(room, event):
+    async def on_add_reaction(event):
         """Handler para agregar o incrementar reacciones."""
         relates_to = event.content.get("m.relates_to", {})
         emoji = relates_to.get("key", "❓")
         reacted_to_event_id = relates_to.get("event_id", "desconocido")
         sender_mxid = event.sender
+        room_id = event.room_id
 
-        db = DB_MODULES[DB_TYPE]["queries"]
+        db = get_db_modules()[DB_TYPE]["queries"]
 
         if sender_mxid == client.mxid:
             return
@@ -25,7 +25,7 @@ def register(client):
             return
 
         # Obtener estudiante
-        reacted_event = await client.get_event(room.room_id, reacted_to_event_id)
+        reacted_event = await client.get_event(room_id, reacted_to_event_id)
         if not reacted_event:
             return
         student_mxid = reacted_event.sender
@@ -34,7 +34,7 @@ def register(client):
             return
 
         # Obtener moodle_course_id
-        room_data = await db.get_room_by_matrix_id(room.room_id)
+        room_data = await db.get_room_by_matrix_id(room_id)
         if not room_data:
             return
         moodle_course_id = room_data[COL_ROOM_MOODLE_COURSE_ID]
@@ -47,44 +47,48 @@ def register(client):
             reaction_type=emoji,
             increment=1
         )
+    
+    client.add_event_handler(EventType.REACTION, on_add_reaction)
 
-    async def redact_reaction(room, event):
-        """Handler para redactar reacciones."""
-        relates_to = event.content.get("m.relates_to", {})
-        emoji = relates_to.get("key", "❓")
-        reacted_to_event_id = relates_to.get("event_id", "desconocido")
-        sender_mxid = event.sender
 
-        db = DB_MODULES[DB_TYPE]["queries"]
+async def redact_reaction(event, client):
+    """Handler para redactar reacciones."""
+    relates_to = event.content.get("m.relates_to", {})
+    emoji = relates_to.get("key", "❓")
+    reacted_to_event_id = relates_to.get("event_id", "desconocido")
+    sender_mxid = event.sender
+    room_id = event.room_id
 
-        if sender_mxid == client.mxid:
-            return
+    db = get_db_modules()[DB_TYPE]["queries"]
 
-        # Verificar profesor
-        teacher = await db.get_user_by_matrix_id(sender_mxid)
-        if not teacher or not teacher[COL_USER_IS_TEACHER]:
-            return
+    if sender_mxid == client.mxid:
+        return
 
-        # Obtener estudiante
-        reacted_event = await client.get_event(room.room_id, reacted_to_event_id)
-        if not reacted_event:
-            return
-        student_mxid = reacted_event.sender
-        student = await db.get_user_by_matrix_id(student_mxid)
-        if not student:
-            return
+    # Verificar profesor
+    teacher = await db.get_user_by_matrix_id(sender_mxid)
+    if not teacher or not teacher[COL_USER_IS_TEACHER]:
+        return
 
-        # Obtener moodle_course_id
-        room_data = await db.get_room_by_matrix_id(room.room_id)
-        if not room_data:
-            return
-        moodle_course_id = room_data[COL_ROOM_MOODLE_COURSE_ID]
+    # Obtener estudiante
+    reacted_event = await client.get_event(room_id, reacted_to_event_id)
+    if not reacted_event:
+        return
+    student_mxid = reacted_event.sender
+    student = await db.get_user_by_matrix_id(student_mxid)
+    if not student:
+        return
 
-        # Disminuir o eliminar reacción
-        await db.decrease_or_delete_reaccion(
-            teacher_id=teacher["id"],
-            student_id=student["id"],
-            moodle_course_id=moodle_course_id,
-            reaction_type=emoji,
-            decrement=1
-        )
+    # Obtener moodle_course_id
+    room_data = await db.get_room_by_matrix_id(room_id)
+    if not room_data:
+        return
+    moodle_course_id = room_data[COL_ROOM_MOODLE_COURSE_ID]
+
+    # Disminuir o eliminar reacción
+    await db.decrease_or_delete_reaccion(
+        teacher_id=teacher["id"],
+        student_id=student["id"],
+        moodle_course_id=moodle_course_id,
+        reaction_type=emoji,
+        decrement=1
+    )

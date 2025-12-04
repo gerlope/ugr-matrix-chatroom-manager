@@ -4,7 +4,7 @@ Consulta y manipulación de datos en PostgreSQL.
 """
 
 from core.db.constants import *
-from core.db.postgres.conn import pool
+import core.db.postgres.conn as conn_module
 from core.db.postgres.utils import db_safe
 
 # ────────────────────────────────
@@ -14,7 +14,7 @@ from core.db.postgres.utils import db_safe
 @db_safe(default=None)
 async def get_user_by_id(user_id: str):
     """Obtiene un usuario por su matrix_id."""
-    async with pool.acquire() as conn:
+    async with conn_module.pool.acquire() as conn:
         return await conn.fetchrow(
             f"SELECT * FROM {TABLE_USERS} WHERE {COL_USER_ID} = $1",
             user_id,
@@ -23,7 +23,7 @@ async def get_user_by_id(user_id: str):
 @db_safe(default=None)
 async def get_user_by_matrix_id(matrix_user_id: str):
     """Obtiene un usuario por su matrix_id."""
-    async with pool.acquire() as conn:
+    async with conn_module.pool.acquire() as conn:
         return await conn.fetchrow(
             f"SELECT * FROM {TABLE_USERS} WHERE {COL_USER_MATRIX_ID} = $1",
             matrix_user_id,
@@ -37,7 +37,7 @@ async def get_user_by_matrix_id(matrix_user_id: str):
 @db_safe(default=None)
 async def get_room_by_matrix_id(matrix_room_id: str):
     """Obtiene los datos de una sala por su Matrix room_id."""
-    async with pool.acquire() as conn:
+    async with conn_module.pool.acquire() as conn:
         return await conn.fetchrow(
             f"SELECT * FROM {TABLE_ROOMS} WHERE {COL_ROOM_ROOM_ID} = $1",
             matrix_room_id,
@@ -51,7 +51,7 @@ async def get_room_by_matrix_id(matrix_room_id: str):
 @db_safe(default=[])
 async def get_reacciones_por_profesor(teacher_matrix_id: str):
     """Obtiene todas las reacciones puestas por un profesor (usando su matrix_id)."""
-    async with pool.acquire() as conn:
+    async with conn_module.pool.acquire() as conn:
         query = f"""
             SELECT r.{COL_REACTION_EMOJI}, r.{COL_REACTION_COUNT}, r.{COL_REACTION_ROOM_ID},
                    s.{COL_USER_MOODLE_ID} AS {JOINED_REACTION_STUDENT_MOODLE_ID}, 
@@ -72,7 +72,7 @@ async def get_reacciones_por_profesor(teacher_matrix_id: str):
 @db_safe(default=[])
 async def get_reacciones_por_estudiante(student_matrix_id: str):
     """Obtiene todas las reacciones recibidas por un estudiante (usando su matrix_id)."""
-    async with pool.acquire() as conn:
+    async with conn_module.pool.acquire() as conn:
         query = f"""
             SELECT r.{COL_REACTION_EMOJI}, r.{COL_REACTION_COUNT}, r.{COL_REACTION_ROOM_ID},
                    t.{COL_USER_MOODLE_ID} AS {JOINED_REACTION_TEACHER_MOODLE_ID},
@@ -101,7 +101,7 @@ async def add_or_increase_reaccion(
     """
     Añade una reación a la tabla o incrementa su contador si ya existe.
     """
-    async with pool.acquire() as conn:
+    async with conn_module.pool.acquire() as conn:
         await conn.execute(f"""
             INSERT INTO {TABLE_REACTIONS} 
                 ({COL_REACTION_TEACHER_ID}, 
@@ -133,7 +133,7 @@ async def decrease_or_delete_reaccion(
     Disminuye el contador de una reacción. 
     Si el contador actual es menor o igual al decremento, elimina la reacción.
     """
-    async with pool.acquire() as conn:
+    async with conn_module.pool.acquire() as conn:
         await conn.execute(f"""
             DELETE FROM {TABLE_REACTIONS}
             WHERE {COL_REACTION_TEACHER_ID} = $1
