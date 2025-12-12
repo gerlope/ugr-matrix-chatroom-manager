@@ -73,6 +73,24 @@ async def get_active_rooms_for_teacher_and_course(course_id: int, teacher_user_i
     return [dict(row) for row in rows]
 
 
+@db_safe(default=None)
+async def get_teacher_tutoring_room(teacher_user_id: int):
+    """Obtiene la sala de tutorías (sin curso asociado) de un profesor."""
+    async with conn_module.pool.acquire() as conn:
+        return await conn.fetchrow(
+            f"""
+            SELECT *
+            FROM {TABLE_ROOMS}
+            WHERE {COL_ROOM_TEACHER_ID} = $1
+              AND {COL_ROOM_MOODLE_COURSE_ID} IS NULL
+              AND {COL_ROOM_ACTIVE} = TRUE
+            ORDER BY {COL_ROOM_CREATED_AT} DESC
+            LIMIT 1
+            """,
+            teacher_user_id,
+        )
+
+
 # ────────────────────────────────
 # Reactions
 # ────────────────────────────────

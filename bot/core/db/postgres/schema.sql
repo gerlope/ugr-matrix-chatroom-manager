@@ -19,7 +19,7 @@ CREATE INDEX IF NOT EXISTS idx_users_matrix_id ON users(matrix_id);
 CREATE TABLE IF NOT EXISTS rooms (
     id SERIAL PRIMARY KEY,
     room_id TEXT UNIQUE NOT NULL,          -- Actual Matrix room ID
-    moodle_course_id INTEGER NOT NULL,     -- Moodle course ID
+    moodle_course_id INTEGER,              -- Moodle course ID (NULL for tutorías)
     teacher_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     shortcode TEXT NOT NULL,               -- short identifier used by the teacher
     moodle_group TEXT,                     -- optional Moodle group, if present only that group has access

@@ -1,7 +1,6 @@
 # handlers/members.py
 
 import asyncio
-from datetime import datetime, timezone
 from typing import Any, Optional
 import requests
 
@@ -13,9 +12,9 @@ from core.db.constants import (
     get_db_modules,
 )
 from mautrix.types import EventType, Membership
+from core.runtime_state import should_process_event
+from core.tutoring_queue import tutoring_queue
 
-# Track when the bot started to ignore old events
-bot_start_time = None
 
 MOODLE_TIMEOUT = 20
 MOODLE_ENDPOINT = f"{MOODLE_URL.rstrip('/')}/webservice/rest/server.php"
@@ -183,15 +182,9 @@ async def _evaluate_knock_request(user_mxid: str, room_id: str) -> tuple[bool, O
     return True, None
 
 def register(client):
-    global bot_start_time
-    bot_start_time = datetime.now(timezone.utc)
-    
     async def on_member_event(event):
-        # Ignore events that happened before the bot started
-        if hasattr(event, 'timestamp') and event.timestamp:
-            event_time = datetime.fromtimestamp(event.timestamp / 1000, tz=timezone.utc)
-            if event_time < bot_start_time:
-                return
+        if not should_process_event(event):
+            return
         
         content = event.content
         membership = content.get("membership")
@@ -253,10 +246,18 @@ def register(client):
 
         # Detecta abandonar la sala
         elif membership == Membership.LEAVE:
-            await client.send_text(
-                room_id,
-                f"👋 {event.state_key} ha salido de la sala."
-            )
+                # Verifica si la sala es de tutoría para liberar la cola
+            try:
+                db_queries = get_db_modules()[DB_TYPE]["queries"]
+                room_row = await db_queries.get_room_by_matrix_id(room_id)
+            except Exception:
+                room_row = None
+            if room_row:
+                room_data = dict(room_row)
+                if room_data.get(COL_ROOM_MOODLE_COURSE_ID) in (None, ""):
+                    released = await tutoring_queue.handle_room_leave(room_id, event.state_key)
+                    if released:
+                        print(f"[INFO] Cola de tutoría liberada automáticamente en {room_id}")
 
         # Detecta invitación a otros usuarios
         elif membership == Membership.INVITE:

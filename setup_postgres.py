@@ -370,6 +370,93 @@ async def grant_moderator(session, token, room_id, user_id, level: int = 50):
             raise RuntimeError(f"Error asignando moderator a {user_id} en {room_id}: {resp.status} {text}")
     return True
 
+
+async def ensure_teacher_tutoring_room(
+    session,
+    conn,
+    token,
+    matrix_id: str,
+    localpart: str,
+    displayname: str,
+):
+    """Ensure each teacher has a dedicated tutoring room with shortcode=localpart."""
+    if conn is None:
+        return None
+
+    teacher_row = await conn.fetchrow("SELECT id FROM users WHERE matrix_id = $1", matrix_id)
+    if not teacher_row:
+        return None
+
+    teacher_db_id = teacher_row["id"]
+    shortcode = (localpart or matrix_id.split(":", 1)[0].lstrip("@") or "tutoria").lower()
+
+    existing = await conn.fetchrow(
+        """
+        SELECT room_id
+        FROM rooms
+        WHERE teacher_id = $1
+          AND moodle_course_id IS NULL
+          AND active = TRUE
+        LIMIT 1
+        """,
+        teacher_db_id,
+    )
+
+    if existing:
+        room_id = existing["room_id"]
+        if DRY_RUN:
+            print(f"[DRY-RUN] Sala de tutoría ya existe para {matrix_id}: {room_id}")
+            return room_id
+        try:
+            await join_user_to_room(session, room_id, matrix_id)
+        except Exception:
+            pass
+        try:
+            await grant_moderator(session, token, room_id, matrix_id, level=50)
+        except Exception as exc:
+            print(f"   ⚠️  No se pudo asegurar moderador en tutoría {room_id} para {matrix_id}: {exc}")
+        return room_id
+
+    if DRY_RUN:
+        print(f"[DRY-RUN] Crear sala de tutoría para {matrix_id} con shortcode '{shortcode}'")
+        return None
+
+    friendly_name = displayname or matrix_id
+    topic = f"Tutorías privadas de {friendly_name}"
+    try:
+        tutoring_room_id = await create_room(
+            session,
+            token,
+            f"Tutoría de {friendly_name}",
+            topic,
+        )
+    except Exception as exc:
+        print(f"   ⚠️  No se pudo crear la sala de tutoría para {matrix_id}: {exc}")
+        return None
+
+    await conn.execute(
+        """
+        INSERT INTO rooms (room_id, moodle_course_id, teacher_id, shortcode, active)
+        VALUES ($1, NULL, $2, $3, TRUE)
+        ON CONFLICT (room_id) DO NOTHING
+        """,
+        tutoring_room_id,
+        teacher_db_id,
+        shortcode,
+    )
+
+    try:
+        await join_user_to_room(session, tutoring_room_id, matrix_id)
+    except Exception as exc:
+        print(f"   ⚠️  No se pudo unir al profesor {matrix_id} a su sala de tutoría: {exc}")
+    try:
+        await grant_moderator(session, token, tutoring_room_id, matrix_id, level=50)
+    except Exception as exc:
+        print(f"   ⚠️  No se pudo otorgar moderador en la sala de tutoría {tutoring_room_id}: {exc}")
+
+    print(f"   → Sala de tutoría creada para {matrix_id}: {tutoring_room_id}")
+    return tutoring_room_id
+
 async def get_room_name(session, token, room_id):
     """Obtener el nombre actual de la sala (puede no existir)."""
     url = f"{HOMESERVER}/_matrix/client/v3/rooms/{room_id}/state/m.room.name"
@@ -652,6 +739,16 @@ async def main():
                             except Exception as e:
                                 print(f"   ⚠️  No se pudo asignar moderador a {matrix_id}: {e}")
                         print(f"   → Unido {matrix_id} ({'profesor' if is_teacher else 'alumno'})")
+
+                    if is_teacher:
+                        await ensure_teacher_tutoring_room(
+                            session,
+                            conn,
+                            token,
+                            matrix_id,
+                            localpart,
+                            displayname,
+                        )
 
                 except Exception as e:
                     print(f"[ERROR] {matrix_id}: {e}")

@@ -18,6 +18,8 @@ from core.client_manager import create_client
 from core.command_registry import load_commands
 from core.event_router import register_event_handlers
 from core.db.constants import get_db_modules
+from core.runtime_state import set_bot_start_time
+from core.tutoring_queue import tutoring_queue
 
 from config import DB_TYPE
 
@@ -25,6 +27,7 @@ async def main():
     db_conn = get_db_modules()[DB_TYPE]["conn"]
     await db_conn.connect()
     client = await create_client()
+    tutoring_queue.configure_client(client)
     load_commands()
     register_event_handlers(client)
 
@@ -43,12 +46,21 @@ async def main():
         
         # Perform an initial sync to get current state, then start listening for new events
         await client.sync(timeout=0, full_state=False, set_presence="online")
+        set_bot_start_time()
         print("[+] Sincronización inicial completada, procesando solo eventos nuevos")
         
         await client.start(filter_data=sync_filter)
     except KeyboardInterrupt:
         print("[*] Bot detenido por usuario")
     finally:
+        try:
+            await client.stop()
+        except Exception:
+            pass
+        try:
+            await client.close()
+        except Exception:
+            pass
         await db_conn.close()
 
 

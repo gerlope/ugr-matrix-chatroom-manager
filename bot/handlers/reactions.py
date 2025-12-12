@@ -3,6 +3,7 @@
 from mautrix.types import EventType
 from core.db.constants import COL_USER_IS_TEACHER, COL_ROOM_MOODLE_COURSE_ID
 from core.db.constants import get_db_modules
+from core.runtime_state import should_process_event
 from config import DB_TYPE
 
 def register(client):
@@ -17,6 +18,9 @@ def register(client):
         db = get_db_modules()[DB_TYPE]["queries"]
 
         if sender_mxid == client.mxid:
+            return
+
+        if not should_process_event(event):
             return
 
         # Verificar profesor
@@ -62,6 +66,9 @@ async def redact_reaction(event, client):
     db = get_db_modules()[DB_TYPE]["queries"]
 
     if sender_mxid == client.mxid:
+        return
+
+    if not should_process_event(event):
         return
 
     # Verificar profesor

@@ -2,6 +2,8 @@
 
 from mautrix.types import EventType
 from handlers.reactions import redact_reaction
+from core.runtime_state import should_process_event
+
 
 def register(client):
     async def handle_redaction(event):
@@ -15,6 +17,9 @@ def register(client):
 
         # You may want to ignore bot's own redactions
         if sender_mxid == client.mxid:
+            return
+        
+        if not should_process_event(event):
             return
 
         # Fetch the redacted event to check its type
