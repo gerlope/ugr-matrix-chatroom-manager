@@ -41,6 +41,13 @@ class Room(models.Model):
         constraints = [
             models.UniqueConstraint(fields=['teacher_id', 'shortcode'], name='unique_teacher_shortcode')
         ]
+    
+    def get_created_at_aware(self):
+        """Return timezone-aware created_at, converting naive values if needed."""
+        from django.utils import timezone
+        if self.created_at and timezone.is_naive(self.created_at):
+            return timezone.make_aware(self.created_at)
+        return self.created_at or timezone.now()
 
     def __str__(self):
         return f"{self.shortcode} (course {self.moodle_course_id})"

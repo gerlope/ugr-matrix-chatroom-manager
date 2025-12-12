@@ -1,7 +1,12 @@
+
 mautrix==0.21.0
-asyncpg==0.30.0
+asyncpg==0.31.0
 requests==2.32.5
 
 # For the web dashboard
-django==5.2.8
+django==6.0
 psycopg2-binary==2.9.11
+
+#For the setup script to call Synapse admin API
+aiohttp==3.10.8
+

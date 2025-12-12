@@ -30,6 +30,16 @@ async def get_user_by_matrix_id(matrix_user_id: str):
         )
 
 
+@db_safe(default=None)
+async def get_user_by_moodle_id(moodle_user_id: int):
+    """Obtiene un usuario por su moodle_id."""
+    async with conn_module.pool.acquire() as conn:
+        return await conn.fetchrow(
+            f"SELECT * FROM {TABLE_USERS} WHERE {COL_USER_MOODLE_ID} = $1",
+            moodle_user_id,
+        )
+
+
 # ────────────────────────────────
 # Rooms
 # ────────────────────────────────
@@ -42,6 +52,25 @@ async def get_room_by_matrix_id(matrix_room_id: str):
             f"SELECT * FROM {TABLE_ROOMS} WHERE {COL_ROOM_ROOM_ID} = $1",
             matrix_room_id,
         )
+
+
+@db_safe(default=[])
+async def get_active_rooms_for_teacher_and_course(course_id: int, teacher_user_id: int):
+    """Devuelve las salas activas de un curso asociadas a un profesor específico."""
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT {COL_ROOM_ID}, {COL_ROOM_ROOM_ID}, {COL_ROOM_SHORTCODE}
+            FROM {TABLE_ROOMS}
+            WHERE {COL_ROOM_MOODLE_COURSE_ID} = $1
+              AND {COL_ROOM_TEACHER_ID} = $2
+              AND {COL_ROOM_ACTIVE} = TRUE
+            ORDER BY {COL_ROOM_SHORTCODE}
+            """,
+            course_id,
+            teacher_user_id,
+        )
+    return [dict(row) for row in rows]
 
 
 # ────────────────────────────────

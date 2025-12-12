@@ -9,19 +9,35 @@ from django.contrib.auth import login
 from django.contrib.auth.models import User
 import json
 from django.core.serializers.json import DjangoJSONEncoder
+import logging
 
 from .utils import (
     get_data_for_dashboard,
     build_availability_display,
     check_availability_overlap,
     WEEK_DAYS_ES,
+    fetch_matrix_room_members,
 )
 from .models import Room, ExternalUser, TeacherAvailability
 from .forms import ExternalLoginForm, CreateRoomForm, CreateQuestionForm, GradeResponseForm
 from .models import Question, QuestionOption, QuestionResponse
 from django.utils import timezone
 from config import SERVER_NAME
+from .matrix_client import (
+    create_room as mc_create_room,
+    invite_all_members,
+    USERNAME,
+    join_user_admin,
+    set_user_power_level,
+    ensure_room_name_prefixed,
+    silence_room_members,
+    academic_closed_prefix,
+    append_subgroup_link_to_topic,
+    remove_subgroup_link_from_topic,
+)
+from asgiref.sync import async_to_sync
 from .models import QuestionResponse
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helper to serialize Django models to JSON
@@ -143,6 +159,7 @@ def create_availability(request):
         )
         messages.success(request, 'Intervalo creado correctamente.')
     except Exception as e:
+        logger.exception("Failed to create availability for teacher_id=%s", teacher.get('id'))
         messages.error(request, f'Error al crear el intervalo: {e}')
     return redirect('dashboard:tutoring_schedule')
 
@@ -182,6 +199,7 @@ def external_login(request):
                 else:
                     form.add_error(None, "Usuario no encontrado")
             except Exception as e:
+                logger.exception("External login lookup failed for username=%s", username)
                 form.add_error(None, f"Error al conectar con la base externa: {e}")
     else:
         form = ExternalLoginForm()
@@ -212,6 +230,7 @@ def delete_availability(request):
         a.delete(using='bot_db')
         messages.success(request, 'Intervalo eliminado correctamente.')
     except Exception as e:
+        logger.exception("Failed to delete availability id=%s for teacher_id=%s", avail_id, teacher.get('id'))
         messages.error(request, f'Error al eliminar la disponibilidad: {e}')
     return redirect('dashboard:tutoring_schedule')
 
@@ -260,6 +279,7 @@ def edit_availability(request):
         a.save(using='bot_db')
         messages.success(request, 'Intervalo actualizado correctamente.')
     except Exception as e:
+        logger.exception("Failed to update availability id=%s for teacher_id=%s", avail_id, teacher.get('id'))
         messages.error(request, f'Error al actualizar el intervalo: {e}')
     return redirect('dashboard:tutoring_schedule')
 
@@ -281,29 +301,124 @@ def create_room(request):
             'show_create_modal': 'true',
         })
     course_id = form.cleaned_data['course_id']
-    shortcode = form.cleaned_data['shortcode']
+    shortcode = (form.cleaned_data['shortcode'] or '').strip()
+    topic = form.cleaned_data.get('topic')
     moodle_group = form.cleaned_data.get('moodle_group')
     auto_invite = form.cleaned_data.get('auto_invite', False)
     restrict_group = form.cleaned_data.get('restrict_group', False)
     try:
+        # Prepare invite list synchronously (from dashboard/Moodle data)
+        matrix_ids = []
+        # Pre-fetch general room synchronously to avoid ORM calls inside async
+        # General room is identified by teacher_id=None and shortcode == course shortname
+        general = Room.objects.using('bot_db').filter(
+            teacher_id=None,
+            moodle_course_id=course_id,
+            active=True,
+        ).first()
+        general_shortcode = ""
+        if general:
+            try:
+                general_shortcode = (general.shortcode or '').strip()
+            except Exception:
+                general_shortcode = ""
+        prefixed_shortcode = f"{general_shortcode}-{shortcode}" if general_shortcode else shortcode
+        if auto_invite and moodle_group:
+            # Pull users directly from Moodle for the selected course/group by name/id
+            try:
+                from .utils import fetch_moodle_groups, fetch_moodle_group_members, fetch_enrolled_students
+                groups = fetch_moodle_groups(course_id) or []
+                group_obj = next((g for g in groups if g.get('name') == moodle_group), None)
+                if not group_obj:
+                    try:
+                        gid = int(moodle_group)
+                        group_obj = next((g for g in groups if g.get('id') == gid), None)
+                    except (ValueError, TypeError):
+                        group_obj = None
+                if not group_obj:
+                    raise ValueError("Grupo no encontrado por nombre o ID")
+
+                member_ids = fetch_moodle_group_members(group_obj['id']) or []
+                enrolled = fetch_enrolled_students(course_id) or []
+                # Students only (role shortname == 'student')
+                group_enrolled = [s for s in enrolled if s.get('id') in member_ids and any(r.get('shortname') == 'student' for r in (s.get('roles') or []))]
+                student_moodle_ids = [s.get('id') for s in group_enrolled if s.get('id') is not None]
+                db_users = ExternalUser.objects.using('bot_db').filter(moodle_id__in=student_moodle_ids)
+                for u in db_users:
+                    if getattr(u, 'matrix_id', None):
+                        matrix_ids.append(u.matrix_id)
+            except Exception as e:
+                logger.warning("Failed to fetch Moodle group users for course_id=%s group=%s: %s", course_id, moodle_group, e)
+                messages.warning(request, f"No se pudieron obtener usuarios del grupo en Moodle: {e}")
+
+        # Create Matrix room via async, then persist in DB synchronously, then invite
+        async def _create_room_and_invite_async():
+            general_room_id = general.room_id if general else None
+            join_rule = None
+            allowed_rooms = None
+            if general_room_id:
+                join_rule = "knock_restricted"
+                allowed_rooms = [general_room_id]
+            elif restrict_group:
+                join_rule = "knock"
+            new_room_id = await mc_create_room(
+                prefixed_shortcode,
+                topic or f"Grupo {prefixed_shortcode}",
+                general_room_id=general_room_id,
+                join_rule=join_rule,
+                allowed_room_ids=allowed_rooms,
+            )
+            if matrix_ids:
+                await invite_all_members(new_room_id, matrix_ids)
+            # Always invite/join the teacher and grant moderator privileges
+            try:
+                teacher_mxid = teacher.get('matrix_id') if isinstance(teacher, dict) else None
+                if teacher_mxid:
+                    await join_user_admin(new_room_id, teacher_mxid)
+                    try:
+                        await set_user_power_level(new_room_id, teacher_mxid, 50)
+                    except Exception as e:
+                        logger.warning("Failed to grant moderator PL to teacher %s in room %s: %s", teacher_mxid, new_room_id, e)
+            except Exception as e:
+                logger.warning("Failed to join teacher %s to room %s: %s", teacher.get('matrix_id'), new_room_id, e)
+            # Append invite link to the general room topic (same course, no moodle_group)
+            try:
+                if general and general.room_id:
+                    # Ensure bot is joined to general room for state updates
+                    if USERNAME:
+                        try:
+                            await join_user_admin(general.room_id, USERNAME)
+                        except Exception as e:
+                            logger.warning("Bot join to general room failed (room_id=%s): %s", general.room_id, e)
+                            pass
+                    await append_subgroup_link_to_topic(general.room_id, new_room_id, prefixed_shortcode)
+            except Exception:
+                logger.exception("Failed to update general room topic for course %s during subgroup creation", course_id)
+                # Don't fail room creation if topic update fails
+                pass
+            return new_room_id
+
+        new_room_id = async_to_sync(_create_room_and_invite_async)()
+
         room = Room.objects.using('bot_db').create(
             moodle_course_id=course_id,
             teacher_id=teacher['id'],
-            shortcode=shortcode,
-            room_id=f"TEMP_{shortcode}_{teacher['id']}",
+            shortcode=prefixed_shortcode,
+            room_id=new_room_id,
             moodle_group=moodle_group if moodle_group and restrict_group else None,
         )
-        if moodle_group is not None and auto_invite:
-            print(f"[INFO] Invitando miembros del grupo {moodle_group} a la sala {room.shortcode}")
-        messages.success(request, f"Sala '{shortcode}' creada correctamente.")
+        messages.success(request, f"Sala '{prefixed_shortcode}' creada correctamente.")
         return redirect(f"{reverse('dashboard:dashboard')}?room_id={room.id}")
     except IntegrityError as e:
         if 'unique' in str(e).lower():
             form.add_error('shortcode', 'Ya existe una sala con este nombre.')
         else:
             form.add_error(None, f"Error al crear la sala: {e}")
+        messages.error(request, f"Error de integridad al crear la sala: {e}")
     except Exception as e:
+        logger.exception("Failed to create room for course_id=%s shortcode=%s", course_id, shortcode)
         form.add_error(None, f"Error al crear la sala: {e}")
+        messages.error(request, f"Error al crear la sala: {e}")
     data = get_data_for_dashboard(teacher, selected_room_id)
     return render(request, 'dashboard/dashboard.html', {
         'teacher': teacher,
@@ -325,9 +440,52 @@ def deactivate_room(request, room_id):
     if room.teacher_id != teacher['id']:
         messages.error(request, 'No tienes permiso para cerrar esta sala.')
         return redirect(f"{reverse('dashboard:dashboard')}?room_id={room.id}")
+    # Perform Matrix-side deactivation behavior similar to setup script
+    try:
+        # Pre-fetch general room synchronously to avoid ORM calls inside async
+        # General room is identified by teacher_id=None and shortcode == course shortname
+        general = Room.objects.using('bot_db').filter(
+            teacher_id=None,
+            moodle_course_id=room.moodle_course_id,
+            active=True,
+        ).first()
+        async def _deactivate():
+            # Ensure bot is joined to the target room to mutate state
+            try:
+                if USERNAME:
+                    await join_user_admin(room.room_id, USERNAME)
+            except Exception as e:
+                logger.warning("Bot join to target room failed (room_id=%s): %s", room.room_id, e)
+                pass
+            # Prefix room name with academic CLOSED
+            created_at = room.get_created_at_aware()
+            prefix = academic_closed_prefix(created_at)
+            await ensure_room_name_prefixed(room.room_id, prefix)
+            # Silence members (PL=-10)
+            await silence_room_members(room.room_id)
+            # Remove invite link from general room topic
+            try:
+                if general and general.room_id:
+                    # Ensure bot joined before updating topic
+                    if USERNAME:
+                        try:
+                            await join_user_admin(general.room_id, USERNAME)
+                        except Exception as e:
+                            logger.warning("Bot join to general room failed (room_id=%s): %s", general.room_id, e)
+                            pass
+                    await remove_subgroup_link_from_topic(general.room_id, room.room_id, room.shortcode)
+            except Exception:
+                logger.exception("Failed to update general room topic during room deactivation (room_id=%s)", room.room_id)
+                # Swallow topic update errors; continue deactivation
+                pass
+        async_to_sync(_deactivate)()
+    except Exception as e:
+        logger.exception("Matrix-side deactivation steps failed for room_id=%s", room.room_id)
+        messages.warning(request, f"No se pudo aplicar cierre en Matrix: {e}")
+    # Mark inactive in DB
     room.active = False
     room.save(using='bot_db')
-    messages.success(request, f"La sala '{room.shortcode}' ha sido cerrada correctamente.")
+    messages.success(request, f"La sala '{room.shortcode}' ha sido cerrada correctamente (DB + Matrix).")
     return redirect('dashboard:dashboard')
 
 
@@ -453,6 +611,7 @@ def create_question(request):
         messages.success(request, 'Pregunta creada correctamente.')
         return redirect(f"{reverse('dashboard:dashboard')}?room_id={room.id}")
     except Exception as e:
+        logger.exception("Failed to create question in room_id=%s by teacher_id=%s", getattr(room, 'id', None), teacher.get('id'))
         form.add_error(None, f"Error creando la pregunta: {e}")
         data = get_data_for_dashboard(teacher, selected_room_id)
         return render(request, 'dashboard/dashboard.html', {
@@ -512,6 +671,7 @@ def toggle_question_active(request, question_id):
         q.save(using='bot_db')
         messages.success(request, 'Pregunta iniciada ahora (start_at actualizada).')
     except Exception as e:
+        logger.exception("Failed to toggle question_active for question_id=%s", question_id)
         messages.error(request, f"Error al actualizar la pregunta: {e}")
     return redirect(f"{reverse('dashboard:dashboard')}?room_id={q.room_id}")
 
@@ -534,6 +694,7 @@ def delete_question(request, question_id):
         q.delete(using='bot_db')
         messages.success(request, 'Pregunta eliminada correctamente.')
     except Exception as e:
+        logger.exception("Failed to delete question_id=%s by teacher_id=%s", question_id, teacher.get('id'))
         messages.error(request, f"Error al eliminar la pregunta: {e}")
     return redirect(f"{reverse('dashboard:dashboard')}?room_id={q.room_id}")
 
@@ -584,5 +745,6 @@ def grade_response(request, response_id):
             resp.save(using='bot_db')
             messages.success(request, 'Respuesta corregida correctamente.')
         except Exception as e:
+            logger.exception("Failed to save grade for response_id=%s by teacher_id=%s", response_id, teacher.get('id'))
             messages.error(request, f'Error al guardar la corrección: {e}')
     return redirect(f"{reverse('dashboard:dashboard')}?room_id={q.room_id}")

@@ -3,10 +3,20 @@
   class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
   x-transition.opacity
   x-data="{
-    selectedCourse: '{{ create_room_form.course_id.value|default:'' }}',
-    selectedGroup: '{{ create_room_form.moodle_group.value|default:'' }}',
+    selectedCourse: '{{ create_room_form.course_id.value|default:''|escapejs }}',
+    selectedGroup: '{{ create_room_form.moodle_group.value|default:''|escapejs }}',
+    shortcodeInput: '{{ create_room_form.shortcode.value|default:''|escapejs }}',
     courseGroups: {},
-    hasGroups() { return this.selectedCourse && this.courseGroups[this.selectedCourse]?.length > 0 }
+    courseShortcodes: {},
+    hasGroups() { return this.selectedCourse && this.courseGroups[this.selectedCourse]?.length > 0 },
+    prefixedShortcode() {
+      const base = (this.courseShortcodes?.[this.selectedCourse] || '').trim();
+      const suffix = (this.shortcodeInput || '').trim();
+      if (!base && !suffix) { return ''; }
+      if (!base) { return suffix; }
+      if (!suffix) { return base; }
+      return `${base}-${suffix}`;
+    }
   }"
   @keydown.escape.window="$store.modal.createRoomModal = false"
   @click.self="$store.modal.createRoomModal = false"
@@ -44,7 +54,7 @@
             <option 
               value="{{ course.id }}"
               {% if create_room_form.course_id.value == course.id|stringformat:"s" %}selected{% endif %}
-              x-init="$nextTick(() => { courseGroups['{{ course.id }}'] = {{ course.groups|safe }} })"
+              x-init="$nextTick(() => { courseGroups['{{ course.id }}'] = {{ course.groups|safe }}; courseShortcodes['{{ course.id }}'] = '{{ course.shortname|escapejs }}' })"
             >
               {{ course.shortname }} - {{ course.displayname|default:course.fullname }}
             </option>
@@ -63,9 +73,13 @@
           name="shortcode" 
           class="w-full border rounded px-3 py-2" 
           placeholder="Ej: grupo1"
+          x-model.trim="shortcodeInput"
           value="{{ create_room_form.shortcode.value|default_if_none:'' }}"
           required
         >
+        <p class="text-sm text-gray-500 mt-1">
+          Nombre final: <span class="font-semibold" x-text="prefixedShortcode() || 'Seleccione un curso y escribe un nombre'"></span>
+        </p>
         {% if create_room_form.shortcode.errors %}
           <p class="text-red-600 text-sm mt-1">{{ create_room_form.shortcode.errors.0 }}</p>
         {% endif %}
@@ -107,7 +121,7 @@
 
         <label class="flex items-center space-x-2" :class="!selectedGroup ? 'opacity-40 cursor-not-allowed' : ''">
           <input type="checkbox" name="restrict_group" class="rounded" :disabled="!selectedGroup" {% if create_room_form.restrict_group.value %}checked{% endif %}>
-          <span>Restringir acceso solo a miembros del grupo</span>
+          <span>Marcar preguntas como inaccesibles a otros grupos (no se contaran respuestas para estadisticas si no se es del grupo)</span>
         </label>
       </div>
 

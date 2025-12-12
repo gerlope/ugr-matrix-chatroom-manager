@@ -20,9 +20,12 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
+import logging
 from django.db.models import Max, Sum
 from django.utils import timezone
 import datetime
+from asgiref.sync import async_to_sync
+from .matrix_client import get_client, fetch_matrix_room_members
 
 from .models import (
     ExternalUser,
@@ -34,9 +37,12 @@ from .models import (
     QuestionResponse,
     TeacherAvailability,
 )
-from config import MOODLE_TOKEN, MOODLE_URL
+from config import MOODLE_TOKEN, MOODLE_URL, HOMESERVER, USERNAME, PASSWORD
+from django.core.cache import cache
 
 WEEK_DAYS_ES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Score distribution helpers
@@ -224,7 +230,7 @@ def fetch_moodle_courses(teacher: Dict[str, Any]) -> List[Dict[str, Any]]:
         resp.raise_for_status()
         return resp.json() or []
     except Exception as e:
-        print(f"[Dashboard] Error fetching courses: {e}")
+        logger.exception("Error fetching Moodle courses for teacher %s", teacher.get("moodle_id"))
         return []
 
 
@@ -240,7 +246,7 @@ def fetch_moodle_groups(course_id: int) -> List[Dict[str, Any]]:
         resp.raise_for_status()
         groups_data = resp.json() or []
     except Exception as e:
-        print(f"[Dashboard] Error fetching groups for course {course_id}: {e}")
+        logger.exception("Error fetching Moodle groups for course %s", course_id)
         return []
     return [{'id': g.get('id'), 'name': g.get('name')} for g in groups_data]
 
@@ -262,7 +268,7 @@ def fetch_moodle_group_members(group_id: int) -> List[int]:
             return data[0].get('userids', [])
         return []
     except Exception as e:
-        print(f"[Dashboard] Error fetching group members for group {group_id}: {e}")
+        logger.exception("Error fetching Moodle group members for group %s", group_id)
         return []
 
 
@@ -278,8 +284,10 @@ def fetch_enrolled_students(course_id: int) -> List[Dict[str, Any]]:
         resp.raise_for_status()
         return resp.json() or []
     except Exception as e:
-        print(f"[Dashboard] Error fetching enrolled users for course {course_id}: {e}")
+        logger.exception("Error fetching enrolled users for course %s", course_id)
         return []
+
+# Matrix helpers are provided by `dashboard.matrix_client`; use those instead.
 
 
 # ---------------------------------------------------------------------------
@@ -335,7 +343,7 @@ def build_selected_options(response: Dict[str, Any], question_options: List[Ques
                         'is_correct': getattr(o, 'is_correct', False),
                     })
     except Exception as e:
-        print(f"[WARN] Error building selected_options for response {response.get('id')}: {e}")
+        logger.warning("Error building selected_options for response %s: %s", response.get('id'), e)
         selected_options = []
     
     return selected_options
@@ -505,7 +513,7 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                     student_db_data = ExternalUser.objects.using('bot_db').filter(moodle_id__in=student_moodle_ids)
                     moodle_group_student_ids = [s.id for s in student_db_data]
         except Exception as e:
-            print(f"[WARN] Could not fetch group members for room {selected_room.shortcode}: {e}")
+            logger.warning("Could not fetch group members for room %s: %s", getattr(selected_room, 'shortcode', None), e)
     
     try:
         qs = list(Question.objects.using('bot_db').filter(room_id=selected_room.id).order_by('-created_at'))
@@ -665,10 +673,10 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                     else:
                         entry['submission_distribution'] = None
             except Exception as e:
-                print(f"[WARN] Could not fetch question responses: {e}")
+                logger.exception("Could not fetch question responses for room %s", getattr(selected_room, 'id', None))
         return selected_questions
     except Exception as e:
-        print(f"[WARN] Could not fetch questions for room {getattr(selected_room, 'shortcode', 'UNKNOWN')}: {e}")
+        logger.exception("Could not fetch questions for room %s", getattr(selected_room, 'shortcode', 'UNKNOWN'))
         return []
 
 
@@ -823,12 +831,10 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
                         for student in student_db_data:
                             selected_students.append(build_student_entry(student, enrolled_data, selected_reactions))
                 except Exception as e:
-                    print(f"[Dashboard] Error loading group members for room {selected_room_id}: {e}")
-                    import traceback
-                    traceback.print_exc()
+                    logger.exception("Error loading group members for room %s", selected_room_id)
             else:
-                # Room not bound to group: use Matrix API (placeholder)
-                participants_matrix_ids = []  # GET FROM MATRIX API
+                # Room not bound to group: pull users from Matrix membership
+                participants_matrix_ids = fetch_matrix_room_members(selected_room.room_id) if getattr(selected_room, 'room_id', None) else []
                 student_db_data = ExternalUser.objects.using('bot_db').filter(matrix_id__in=participants_matrix_ids)
 
                 for student in student_db_data:
@@ -848,12 +854,14 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
                 for rm in rooms_to_assemble:
                     try:
                         selected_questions.extend(assemble_questions_for_room(rm, teacher['id']) or [])
-                    except Exception:
+                    except Exception as e:
+                        logger.warning("Failed to assemble questions for room %s; skipping: %s", getattr(rm, 'id', None), e)
                         continue  # ignore per-room failures and continue
             else:
                 # Specific room: get questions for this room only
                 selected_questions = assemble_questions_for_room(selected_room, teacher['id'])
-        except Exception:
+        except Exception as e:
+            logger.exception("Failed assembling selected questions for room %s", getattr(selected_room, 'id', None))
             selected_questions = []
 
         # Attach student responses if we have both students and questions
@@ -861,9 +869,7 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
             try:
                 attach_student_responses(selected_students, selected_questions)
             except Exception as e:
-                print(f"[ERROR] Failed to attach student responses: {e}")
-                import traceback
-                traceback.print_exc()
+                logger.exception("Failed to attach student responses for room %s", getattr(selected_room, 'id', None))
                 pass  # best-effort; do not break dashboard assembly on errors
     
     thread_results[index] = {

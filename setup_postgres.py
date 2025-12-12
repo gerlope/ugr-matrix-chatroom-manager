@@ -15,7 +15,6 @@ from pathlib import Path
 import aiohttp
 import asyncpg
 import requests
-import time
 import string
 import secrets
 from config import (MOODLE_URL, MOODLE_TOKEN,
@@ -30,7 +29,7 @@ from config import (MOODLE_URL, MOODLE_TOKEN,
 PG_DSN = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 # --- Parámetros generales ---
 ROOM_VISIBILITY = "private"
-DRY_RUN = True  # True = modo simulación
+DRY_RUN = False  # True = modo simulación
 DEACTIVATE_ALL_ROOMS = True  # Si True, desactiva todas las salas y expulsa a todos sus miembros al inicio
 
 # ==============================
@@ -156,6 +155,23 @@ async def create_room(session, token, name, topic=None):
     }
     if topic:
         body["topic"] = topic
+    # Make room require knocking for entry instead of invite-only and set power levels
+    body["initial_state"] = [
+        {"type": "m.room.join_rules", "state_key": "", "content": {"join_rule": "knock"}},
+        {
+            "type": "m.room.power_levels",
+            "state_key": "",
+            "content": {
+                # ensure creator (bot) keeps 100 PL so it can send state events immediately
+                "users": {BOT_MXID: 100},
+                # require moderator-level (50) to invite by default
+                "invite": 50,
+                "events_default": 0,
+                "state_default": 50,
+                "users_default": 0,
+            },
+        },
+    ]
 
     max_retries = 3
     for attempt in range(max_retries):
@@ -179,43 +195,6 @@ async def create_room(session, token, name, topic=None):
                 raise RuntimeError(f"Error creando sala {name}: {resp.status} {await resp.text()}")
     
     raise RuntimeError(f"Error creando sala {name}: Máximo de reintentos alcanzado")
-
-async def enforce_invite_admin_only(session, token, room_id, level: int = 50):
-    """Set room power levels so only users with >= level can invite.
-
-    Updates `m.room.power_levels` setting `invite` to the provided level.
-    Preserves existing structure and users' specific levels.
-    """
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    url = f"{HOMESERVER}/_matrix/client/v3/rooms/{room_id}/state/m.room.power_levels"
-    # Fetch current PL
-    async with session.get(url, headers=headers, timeout=15) as resp:
-        if resp.status == 404:
-            power = {}
-        elif resp.status != 200:
-            raise RuntimeError(f"Error obteniendo power levels de {room_id}: {resp.status} {await resp.text()}")
-        else:
-            power = await resp.json()
-
-    current_invite = power.get("invite")
-    if isinstance(current_invite, int) and current_invite >= level:
-        return True
-    power["invite"] = level
-
-    # Write back with retry on rate limit
-    max_retries = 3
-    for attempt in range(max_retries):
-        async with session.put(url, headers=headers, json=power, timeout=15) as resp:
-            if resp.status in (200, 201):
-                return True
-            if resp.status == 429:
-                data = await resp.json()
-                retry_ms = data.get("retry_after_ms", 1500)
-                await asyncio.sleep(retry_ms/1000.0 + 0.1)
-                continue
-            text = await resp.text()
-            raise RuntimeError(f"Error fijando invite={level} en {room_id}: {resp.status} {text}")
-    return True
 
 async def join_user_to_room(session, room_id, user_id):
     """Use admin API to force join a user to a room.
@@ -558,14 +537,6 @@ async def main():
                 topic = f"Grupo de la asignatura {cname}"
                 room_id = await create_room(session, token, cname, topic)
                 room_id_teachers = await create_room(session, token, f"{cname} - Profesores", f"Sala de profesores para {cname}")
-
-                # Enforce that only moderators/admins can invite in both rooms
-                try:
-                    await enforce_invite_admin_only(session, token, room_id, level=50)
-                    await enforce_invite_admin_only(session, token, room_id_teachers, level=50)
-                    print("   → Invitaciones restringidas a moderadores/admin")
-                except Exception as e:
-                    print(f"   ⚠️  No se pudo restringir invitaciones: {e}")
 
                 # Insert or replace active rooms in the database
                 async with conn.transaction():

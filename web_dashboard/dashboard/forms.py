@@ -9,9 +9,10 @@ class ExternalLoginForm(forms.Form):
 class CreateRoomForm(forms.Form):
     course_id = forms.IntegerField()
     shortcode = forms.CharField(max_length=100)
+    topic = forms.CharField(max_length=200, required=False)
     moodle_group = forms.CharField(max_length=100, required=False)
-    auto_invite = forms.BooleanField(required=False, initial=False)
-    restrict_group = forms.BooleanField(required=False, initial=False)
+    auto_invite = forms.BooleanField(required=False, initial=False, help_text="Invitar a todos los usuarios del grupo (admin join)")
+    restrict_group = forms.BooleanField(required=False, initial=False, help_text="Limitar la sala al grupo seleccionado")
 
 
 class CreateQuestionForm(forms.Form):
