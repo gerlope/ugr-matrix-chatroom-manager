@@ -238,8 +238,24 @@ async def list_joined_members(session, token, room_id):
         data = await resp.json()
         members = []
         for ev in data.get("chunk", []):
+            if ev.get("content", {}).get("membership") == "join":
                 members.append(ev.get("state_key"))
         return members
+
+
+async def list_invited_members(session, token, room_id):
+    """Return list of user_ids with pending invites in the room."""
+    url = f"{HOMESERVER}/_matrix/client/v3/rooms/{room_id}/members"
+    headers = {"Authorization": f"Bearer {token}"}
+    async with session.get(url, headers=headers, timeout=20) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"Error obteniendo miembros de {room_id}: {resp.status} {await resp.text()}")
+        data = await resp.json()
+        invited = []
+        for ev in data.get("chunk", []):
+            if ev.get("content", {}).get("membership") == "invite":
+                invited.append(ev.get("state_key"))
+        return invited
 
 async def kick_user_from_room(session, token, room_id, user_id, reason="Room rotated, kicking all members"):
     """Kick a user from a room using client API. Returns True if kicked, False otherwise."""
@@ -256,7 +272,7 @@ async def kick_user_from_room(session, token, room_id, user_id, reason="Room rot
             text = await resp.text()
             raise RuntimeError(f"Error expulsando {user_id} de {room_id}: {resp.status} {text}")
 
-async def kick_all_members_from_room(session, token, room_id, bot_mxid):
+async def silence_all_members_from_room(session, token, room_id, bot_mxid):
     """Silence all joined members by setting power level to -10 (except the bot).
 
     Ensures the bot is in the room and has admin rights first.
@@ -284,6 +300,31 @@ async def kick_all_members_from_room(session, token, room_id, bot_mxid):
                 print(f"   → Silenciado {mxid} en sala antigua {room_id} (PL=-10)")
         except Exception as e:
             print(f"   ⚠️  No se pudo silenciar {mxid} en {room_id}: {e}")
+
+    # Cancel any pending invites
+    await cancel_pending_invites(session, token, room_id, bot_mxid)
+
+
+async def cancel_pending_invites(session, token, room_id, bot_mxid):
+    """Cancel all pending invites in the room by kicking invited users."""
+    if DRY_RUN:
+        print(f"[DRY-RUN] Cancelar invitaciones pendientes en {room_id} → no cambios reales")
+        return
+    try:
+        invited = await list_invited_members(session, token, room_id)
+    except Exception as e:
+        print(f"   ⚠️  No se pudo obtener invitaciones pendientes de {room_id}: {e}")
+        return
+    for mxid in invited:
+        if mxid == bot_mxid:
+            continue
+        try:
+            ok = await kick_user_from_room(session, token, room_id, mxid, reason="Room closed, invite cancelled")
+            if ok:
+                print(f"   → Invitación cancelada para {mxid} en {room_id}")
+        except Exception as e:
+            print(f"   ⚠️  No se pudo cancelar invitación de {mxid} en {room_id}: {e}")
+
 
 async def set_user_power_level(session, token, room_id, user_id, level: int):
     """Set a user's power level within a room, with rate-limit retries."""
@@ -552,7 +593,7 @@ async def deactivate_all_rooms_and_kick(conn, session, bot_token, bot_mxid):
             created_at = rec["created_at"] if rec and rec["created_at"] else datetime.utcnow()
             prefix = academic_closed_prefix(created_at)
             await ensure_room_name_prefixed(session, bot_token, rmid, prefix)
-            await kick_all_members_from_room(session, bot_token, rmid, bot_mxid)
+            await silence_all_members_from_room(session, bot_token, rmid, bot_mxid)
         except Exception as e:
             print(f"[AVISO] No se pudieron expulsar miembros de {rmid}: {e}")
 
@@ -687,7 +728,7 @@ async def main():
                                 print(f"[DRY-RUN] '{cshortname}': renombrar {old_room_id} a '{prefix}<nombre_actual>' y silenciar miembros")
                             else:
                                 await ensure_room_name_prefixed(session, token, old_room_id, prefix)
-                                await kick_all_members_from_room(session, token, old_room_id, bot_mxid)
+                                await silence_all_members_from_room(session, token, old_room_id, bot_mxid)
                 except Exception as e:
                     print(f"[AVISO] No se pudieron expulsar miembros de salas antiguas: {e}")
 

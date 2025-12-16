@@ -91,6 +91,44 @@ async def get_teacher_tutoring_room(teacher_user_id: int):
         )
 
 
+@db_safe(default=[])
+async def get_teacher_availability_windows(teacher_user_id: int):
+    """Devuelve las franjas horarias de disponibilidad para el profesor dado."""
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT {COL_TEACHER_AVAILABILITY_DAY_OF_WEEK} AS day_of_week,
+                   {COL_TEACHER_AVAILABILITY_START_TIME} AS start_time,
+                   {COL_TEACHER_AVAILABILITY_END_TIME} AS end_time
+            FROM {TABLE_TEACHER_AVAILABILITY}
+            WHERE {COL_TEACHER_AVAILABILITY_TEACHER_ID} = $1
+            ORDER BY {COL_TEACHER_AVAILABILITY_DAY_OF_WEEK}, {COL_TEACHER_AVAILABILITY_START_TIME}
+            """,
+            teacher_user_id,
+        )
+    return [dict(row) for row in rows]
+
+
+@db_safe(default=[])
+async def get_general_rooms_for_courses(course_ids: list):
+    """Devuelve las salas generales (teacher_id IS NULL) activas para una lista de cursos."""
+    if not course_ids:
+        return []
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT {COL_ROOM_ID}, {COL_ROOM_ROOM_ID}, {COL_ROOM_SHORTCODE}, {COL_ROOM_MOODLE_COURSE_ID}
+            FROM {TABLE_ROOMS}
+            WHERE {COL_ROOM_MOODLE_COURSE_ID} = ANY($1::int[])
+              AND {COL_ROOM_TEACHER_ID} IS NULL
+              AND {COL_ROOM_ACTIVE} = TRUE
+            ORDER BY {COL_ROOM_MOODLE_COURSE_ID}, {COL_ROOM_SHORTCODE}
+            """,
+            course_ids,
+        )
+    return [dict(row) for row in rows]
+
+
 # ────────────────────────────────
 # Reactions
 # ────────────────────────────────

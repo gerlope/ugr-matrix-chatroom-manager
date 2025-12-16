@@ -304,6 +304,58 @@ async def silence_room_members(room_id: str, bot_mxid: Optional[str] = USERNAME)
             pass
     return affected
 
+
+async def get_invited_members(room_id: str) -> List[str]:
+    """Get list of users with 'invite' membership (pending invites)."""
+    async def _bg():
+        bg_client = await _bg_get_client()
+        state_events = await bg_client.get_state(room_id)
+        invited: List[str] = []
+        for ev in state_events:
+            try:
+                if str(ev.type) == "m.room.member" and ev.content.get("membership") == Membership.INVITE:
+                    invited.append(ev.state_key)
+            except Exception:
+                continue
+        return invited
+
+    fut = _run_on_bg(_bg())
+    return await _await_future_in_async(fut)
+
+
+async def kick_user(room_id: str, user_id: str, reason: str = "Removed from room") -> bool:
+    """Kick a user from the room (also cancels pending invites)."""
+    async def _bg():
+        bg_client = await _bg_get_client()
+        try:
+            await bg_client.kick_user(room_id, user_id, reason)
+            return True
+        except Exception as e:
+            error_msg = str(e)
+            # 403/404 means user not in room or already left
+            if "403" in error_msg or "404" in error_msg:
+                return False
+            raise
+
+    fut = _run_on_bg(_bg())
+    return await _await_future_in_async(fut)
+
+
+async def cancel_pending_invites(room_id: str, bot_mxid: Optional[str] = USERNAME) -> int:
+    """Cancel all pending invites in the room by kicking invited users."""
+    invited = await get_invited_members(room_id)
+    cancelled = 0
+    for mxid in invited:
+        if bot_mxid and mxid == bot_mxid:
+            continue
+        try:
+            ok = await kick_user(room_id, mxid, "Room closed, invite cancelled")
+            if ok:
+                cancelled += 1
+        except Exception:
+            pass
+    return cancelled
+
 async def get_room_topic(room_id: str) -> str:
     async def _bg():
         bg_client = await _bg_get_client()

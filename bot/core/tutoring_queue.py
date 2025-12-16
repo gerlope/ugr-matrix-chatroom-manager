@@ -7,8 +7,8 @@ from typing import Dict, List, Optional, Tuple
 
 
 class QueueState:
-    FREE = "free"
-    OCCUPIED = "occupied"
+    FREE = "Libre"
+    OCCUPIED = "Ocupada"
 
 
 @dataclass
@@ -29,6 +29,7 @@ class RoomQueue:
     pending_user: Optional[str] = None
     pending_task: Optional[asyncio.Task] = None
     active_user: Optional[str] = None
+    teacher_ack_required: bool = False
 
 
 class TutoringQueueManager:
@@ -50,7 +51,7 @@ class TutoringQueueManager:
         teacher_localpart: str,
         user_mxid: str,
         notify_room_id: str,
-    ) -> Tuple[int, bool]:
+    ) -> Tuple[int, bool, bool]:
         async with self._lock:
             queue = self._queues.get(room_id)
             if not queue:
@@ -69,19 +70,32 @@ class TutoringQueueManager:
             for idx, entry in enumerate(queue.entries):
                 if entry.user_mxid == user_mxid:
                     position = idx + 1
-                    return position, False
+                    return position, False, False
 
+            auto_confirm = False
+            should_notify = False
             queue.entries.append(QueueEntry(user_mxid=user_mxid, notify_room_id=notify_room_id))
             position = len(queue.entries)
-            should_notify = (
+            if (
                 queue.state == QueueState.FREE
                 and not queue.pending_user
                 and position == 1
-            )
+            ):
+                queue.pending_user = user_mxid
+                auto_confirm = True
+            else:
+                should_notify = (
+                    queue.state == QueueState.FREE
+                    and not queue.pending_user
+                    and position == 1
+                )
+
+        if auto_confirm:
+            return position, True, True
 
         if should_notify:
             await self._notify_next(room_id)
-        return position, True
+        return position, True, False
 
     async def confirm_access(self, room_id: str, user_mxid: str) -> Tuple[bool, str]:
         async with self._lock:
@@ -92,6 +106,7 @@ class TutoringQueueManager:
             queue.state = QueueState.OCCUPIED
             queue.active_user = user_mxid
             queue.pending_user = None
+            queue.teacher_ack_required = True
             pending_task = queue.pending_task
             queue.pending_task = None
 
@@ -112,6 +127,7 @@ class TutoringQueueManager:
             queue.active_user = None
             queue.pending_user = None
             queue.pending_task = None
+            queue.teacher_ack_required = False
             queue.state = QueueState.FREE
             notify_next = bool(queue.entries)
             self._maybe_cleanup_locked(room_id)
@@ -122,29 +138,49 @@ class TutoringQueueManager:
             await self._notify_next(room_id)
         return True, removed_user
 
-    async def leave_queue(self, room_id: str, user_mxid: str) -> bool:
+    async def leave_queue(self, room_id: str, user_mxid: str) -> Tuple[bool, Optional[str]]:
         async with self._lock:
             queue = self._queues.get(room_id)
             if not queue:
-                return False
+                return False, "No existe una cola para esta sala."
 
             removed = False
             pending_task = None
+            notify_next_after = False
             for idx, entry in enumerate(list(queue.entries)):
                 if entry.user_mxid != user_mxid:
                     continue
+                # If active but awaiting teacher confirmation, allow leaving
+                if queue.active_user == user_mxid:
+                    if queue.teacher_ack_required:
+                        # Student can cancel while awaiting teacher confirmation
+                        removed = True
+                        queue.entries.pop(idx)
+                        pending_task = queue.pending_task
+                        queue.pending_task = None
+                        queue.pending_user = None
+                        queue.active_user = None
+                        queue.teacher_ack_required = False
+                        queue.state = QueueState.FREE
+                        notify_next_after = bool(queue.entries)
+                        break
+                    else:
+                        return False, (
+                            "⚠️ Estás ocupando la tutoría ahora mismo. "
+                            "Sal de la sala o usa `!tutoria acabar <profesor>` para terminar."
+                        )
                 removed = True
                 queue.entries.pop(idx)
                 if queue.pending_user == user_mxid:
                     pending_task = queue.pending_task
                     queue.pending_user = None
                     queue.pending_task = None
-                if queue.active_user == user_mxid:
-                    queue.active_user = None
-                    queue.state = QueueState.FREE
                 break
 
-            notify_next = (
+            if not removed:
+                return False, "ℹ️ No estabas en la cola de esa sala."
+
+            notify_next = notify_next_after or (
                 removed
                 and queue.state == QueueState.FREE
                 and not queue.pending_user
@@ -156,7 +192,7 @@ class TutoringQueueManager:
             pending_task.cancel()
         if notify_next:
             await self._notify_next(room_id)
-        return removed
+        return True, None
 
     async def handle_room_leave(self, room_id: str, user_mxid: str) -> bool:
         """Release the active slot when the attendee leaves the tutoring room."""
@@ -171,6 +207,7 @@ class TutoringQueueManager:
             if queue.entries and queue.entries[0].user_mxid == user_mxid:
                 queue.entries.pop(0)
             queue.active_user = None
+            queue.teacher_ack_required = False
             queue.state = QueueState.FREE
             notify_next = bool(queue.entries)
             self._maybe_cleanup_locked(room_id)
@@ -189,11 +226,14 @@ class TutoringQueueManager:
 
             entries = []
             for idx, entry in enumerate(queue.entries):
-                status = "waiting"
+                status = "Esperando"
                 if queue.pending_user == entry.user_mxid:
-                    status = "awaiting-confirmation"
+                    status = "Esperando confirmacion de alumno"
                 if queue.active_user == entry.user_mxid:
-                    status = "active"
+                    if queue.teacher_ack_required:
+                        status = "Esperando confirmacion del profesor"
+                    else:
+                        status = "Dentro de la sala"
                 entries.append(
                     {
                         "position": idx + 1,
@@ -210,6 +250,27 @@ class TutoringQueueManager:
             if not queue:
                 return False
             return queue.active_user == user_mxid
+
+    def is_teacher_ack_pending(self, room_id: str) -> bool:
+        queue = self._queues.get(room_id)
+        if not queue:
+            return False
+        return queue.teacher_ack_required
+
+    async def teacher_acknowledge(self, room_id: str, teacher_mxid: str) -> Tuple[bool, str, Optional[str]]:
+        async with self._lock:
+            queue = self._queues.get(room_id)
+            if not queue:
+                return False, "No existe una cola para esta sala.", None
+            if queue.teacher_mxid != teacher_mxid:
+                return False, "No eres el profesor asignado a esta sala.", None
+            if not queue.active_user:
+                return False, "No hay estudiantes confirmados esperando acceso.", None
+            if not queue.teacher_ack_required:
+                return False, "Esta tutoría ya fue confirmada por el profesor.", queue.active_user
+            queue.teacher_ack_required = False
+            student = queue.active_user
+        return True, "Confirmación registrada.", student
 
     async def _notify_next(self, room_id: str) -> None:
         entry_info: Optional[Tuple[QueueEntry, RoomQueue]] = None

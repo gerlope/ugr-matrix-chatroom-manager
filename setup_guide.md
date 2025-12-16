@@ -4,6 +4,8 @@ kubectl -n ess edit configmap ess-synapse
 
 Añadir a los limites que queramos sobrepasar
 
+Recomiendo al menos rc_joins, rc_invites, rc_room_creation
+
 exempt_user_ids:
   - "@username:homeserver.tls"
 

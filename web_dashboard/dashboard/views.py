@@ -16,7 +16,6 @@ from .utils import (
     build_availability_display,
     check_availability_overlap,
     WEEK_DAYS_ES,
-    fetch_matrix_room_members,
 )
 from .models import Room, ExternalUser, TeacherAvailability
 from .forms import ExternalLoginForm, CreateRoomForm, CreateQuestionForm, GradeResponseForm
@@ -31,6 +30,7 @@ from .matrix_client import (
     set_user_power_level,
     ensure_room_name_prefixed,
     silence_room_members,
+    cancel_pending_invites,
     academic_closed_prefix,
     append_subgroup_link_to_topic,
     remove_subgroup_link_from_topic,
@@ -463,6 +463,8 @@ def deactivate_room(request, room_id):
             await ensure_room_name_prefixed(room.room_id, prefix)
             # Silence members (PL=-10)
             await silence_room_members(room.room_id)
+            # Cancel any pending invites
+            await cancel_pending_invites(room.room_id)
             # Remove invite link from general room topic
             try:
                 if general and general.room_id:
