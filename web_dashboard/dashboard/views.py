@@ -555,24 +555,15 @@ def create_question(request):
             title=form.cleaned_data.get('title') or None,
             body=form.cleaned_data['body'],
             qtype=qtype,
+            expected_answer = form.cleaned_data.get('expected_answer') if qtype in ('short_answer', 'numeric') else None,
             start_at=form.cleaned_data.get('start_at'),
             end_at=form.cleaned_data.get('end_at'),
             manual_active=False,
             allow_multiple_submissions=form.cleaned_data.get('allow_multiple_submissions', False),
-            allow_multiple_answers=form.cleaned_data.get('allow_multiple_answers', False),
+            allow_multiple_selections=form.cleaned_data.get('allow_multiple_selections', False),
             close_on_first_correct=form.cleaned_data.get('close_on_first_correct', False)
         )
-        if qtype in ('short_answer', 'numeric'):
-            expected = request.POST.get('expected_answer', '').strip()
-            if expected:
-                QuestionOption.objects.using('bot_db').create(
-                    question_id=q.id,
-                    option_key='ANSWER',
-                    text=expected,
-                    is_correct=True,
-                    position=0
-                )
-        elif qtype == 'true_false':
+        if qtype == 'true_false':
             tf_correct = request.POST.get('tf_correct')
             for idx, opt_text in enumerate(options):
                 is_correct = (str(idx) == str(tf_correct)) if tf_correct is not None else False

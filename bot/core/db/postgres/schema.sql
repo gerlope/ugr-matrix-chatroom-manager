@@ -171,11 +171,12 @@ CREATE TABLE IF NOT EXISTS questions (
     title TEXT,
     body TEXT NOT NULL,
     qtype question_type NOT NULL,
+    expected_answer TEXT,
     start_at TIMESTAMP WITH TIME ZONE,
     end_at TIMESTAMP WITH TIME ZONE,
     manual_active BOOLEAN DEFAULT FALSE,
     allow_multiple_submissions BOOLEAN DEFAULT FALSE,
-    allow_multiple_answers BOOLEAN DEFAULT FALSE, -- for multi-select questions
+    allow_multiple_selections BOOLEAN DEFAULT FALSE, -- for multi-select questions
     close_on_first_correct BOOLEAN DEFAULT FALSE,
     close_triggered BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

@@ -27,6 +27,7 @@ class CreateQuestionForm(forms.Form):
         ('essay', 'Desarrollo'),
     ]
     qtype = forms.ChoiceField(choices=QTYPE_CHOICES)
+    expected_answer = forms.CharField(max_length=500, required=False, help_text="Respuesta esperada (para preguntas de respuesta corta o numérica)")
     start_at = forms.DateTimeField(required=False, input_formats=['%Y-%m-%dT%H:%M'])
     end_at = forms.DateTimeField(required=False, input_formats=['%Y-%m-%dT%H:%M'])
     allow_multiple_answers = forms.BooleanField(required=False, initial=False)

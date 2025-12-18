@@ -238,3 +238,81 @@ async def decrease_or_delete_reaccion(
         """, teacher_id, student_id, room_id, reaction_type, decrement)
     return True
 
+
+# ────────────────────────────────
+# Questions
+# ────────────────────────────────
+
+@db_safe(default=[])
+async def get_active_questions_for_courses(course_ids: list):
+    """
+    Devuelve las preguntas activas para una lista de cursos.
+    Una pregunta está activa si:
+    - manual_active = TRUE, o
+    - start_at <= now AND (end_at IS NULL OR end_at >= now), o
+    - start_at IS NULL AND end_at >= now
+    Excluye preguntas con close_triggered = TRUE.
+    """
+    if not course_ids:
+        return []
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+                 SELECT q.{COL_QUESTION_ID},
+                     q.{COL_QUESTION_TITLE},
+                     q.{COL_QUESTION_BODY},
+                     q.{COL_QUESTION_QTYPE},
+                     q.{COL_QUESTION_START_AT},
+                     q.{COL_QUESTION_END_AT},
+                     q.{COL_QUESTION_MANUAL_ACTIVE},
+                     q.{COL_QUESTION_ALLOW_MULTIPLE_SELECTIONS},
+                     q.{COL_QUESTION_ALLOW_MULTIPLE_SUBMISSIONS},
+                     q.{COL_QUESTION_CLOSE_ON_FIRST_CORRECT},
+                   r.{COL_ROOM_ID} AS room_db_id,
+                   r.{COL_ROOM_ROOM_ID} AS room_matrix_id,
+                   r.{COL_ROOM_SHORTCODE} AS room_shortcode,
+                   r.{COL_ROOM_MOODLE_COURSE_ID} AS room_course_id,
+                   r.{COL_ROOM_MOODLE_GROUP} AS room_moodle_group
+            FROM {TABLE_QUESTIONS} q
+            JOIN {TABLE_ROOMS} r ON q.{COL_QUESTION_ROOM_ID} = r.{COL_ROOM_ID}
+            WHERE r.{COL_ROOM_MOODLE_COURSE_ID} = ANY($1::int[])
+              AND r.{COL_ROOM_ACTIVE} = TRUE
+              AND q.{COL_QUESTION_CLOSE_TRIGGERED} = FALSE
+              AND (
+                  q.{COL_QUESTION_MANUAL_ACTIVE} = TRUE
+                  OR (
+                      q.{COL_QUESTION_START_AT} IS NOT NULL
+                      AND q.{COL_QUESTION_START_AT} <= NOW()
+                      AND (q.{COL_QUESTION_END_AT} IS NULL OR q.{COL_QUESTION_END_AT} >= NOW())
+                  )
+                  OR (
+                      q.{COL_QUESTION_START_AT} IS NULL
+                      AND q.{COL_QUESTION_END_AT} IS NOT NULL
+                      AND q.{COL_QUESTION_END_AT} >= NOW()
+                  )
+              )
+            ORDER BY r.{COL_ROOM_SHORTCODE}, q.{COL_QUESTION_ID}
+            """,
+            course_ids,
+        )
+    return [dict(row) for row in rows]
+
+
+@db_safe(default=[])
+async def get_question_options(question_id: int):
+    """Devuelve las opciones de una pregunta."""
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT {COL_QUESTION_OPTION_ID},
+                   {COL_QUESTION_OPTION_KEY},
+                   {COL_QUESTION_OPTION_TEXT},
+                   {COL_QUESTION_OPTION_POSITION}
+            FROM {TABLE_QUESTION_OPTIONS}
+            WHERE {COL_QUESTION_OPTION_QUESTION_ID} = $1
+            ORDER BY {COL_QUESTION_OPTION_POSITION}, {COL_QUESTION_OPTION_KEY}
+            """,
+            question_id,
+        )
+    return [dict(row) for row in rows]
+

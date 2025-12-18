@@ -13,13 +13,11 @@
           </div>
         {% endif %}
 
-        {% if opts %}
-          <div class="mt-3">
-            {% if q.qtype == 'short_answer' or q.qtype == 'numeric' %}
-              {% for o in opts %}{% if o.option_key == 'ANSWER' %}
-                <div class="expected-answer text-sm text-gray-700" style="display:none; white-space:pre;">    Respuesta esperada: {{ o.text }}</div>
-              {% endif %}{% endfor %}
-            {% else %}
+        <div class="mt-3">
+          {% if q.qtype == 'short_answer' or q.qtype == 'numeric' %}
+            <div class="expected-answer text-sm text-gray-700" style="display:none; white-space:pre;">    Respuesta esperada: {{ q.expected_answer }}</div>
+          {% else %}
+            {% if opts %}
               <ul class="list-disc ml-5 text-sm text-gray-700">
                 {% for o in opts %}
                   <li class="space-x-2">
@@ -31,8 +29,8 @@
                 {% endfor %}
               </ul>
             {% endif %}
-          </div>
-        {% endif %}
+          {% endif %}
+        </div>
       </div>
       
       <div class="flex-shrink-0">
@@ -52,7 +50,7 @@
             <div class="inline-block bg-gray-200 text-gray-800 px-2 py-1 rounded mt-1">Cerrada (1ª correcta recibida)</div>
           {% endif %}
           {% if q.qtype == 'multiple_choice' %}
-            {% if q.allow_multiple_answers %}
+            {% if q.allow_multiple_selections %}
               <div class="inline-block bg-indigo-100 text-indigo-800 px-2 py-1 rounded mt-1">Múltiple selección</div>
             {% endif %}
           {% endif %}

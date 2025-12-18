@@ -294,17 +294,30 @@ def fetch_enrolled_students(course_id: int) -> List[Dict[str, Any]]:
 # Question response enrichment helpers
 # ---------------------------------------------------------------------------
 
-def extract_expected_answers(options: List[QuestionOption]) -> Tuple[Optional[str], List[Dict[str, Any]]]:
-    """Extract expected text (for short_answer/numeric) and expected options (for multiple_choice)."""
+def extract_expected_answers(options: List[QuestionOption], question: Optional[Question] = None) -> Tuple[Optional[str], List[Dict[str, Any]]]:
+    """Extract expected text (for short_answer/numeric) and expected options (for multiple_choice).
+
+    If `question` is provided and has an `expected_answer` value, it will be used as the
+    expected_text (preferred over any sentinel ANSWER option).
+    """
     expected_text = None
     expected_options = []
-    
     try:
-        for o in options:
-            # short_answer/numeric expected value stored under option_key 'ANSWER'
-            if getattr(o, 'option_key', None) == 'ANSWER' and getattr(o, 'text', None):
-                expected_text = o.text
-        
+        if question is not None:
+            q_expected = None
+            # Django model instance
+            if hasattr(question, 'expected_answer'):
+                q_expected = getattr(question, 'expected_answer')
+            # Serialized dict-like question
+            elif isinstance(question, dict):
+                q_expected = question.get('expected_answer')
+
+            if q_expected is not None:
+                # Normalize and treat empty/whitespace-only as no value
+                q_expected_s = str(q_expected).strip()
+                if q_expected_s:
+                    expected_text = q_expected_s
+
         # for multiple choice, collect correct options but skip ANSWER pseudo-option
         for o in options:
             try:
@@ -319,7 +332,6 @@ def extract_expected_answers(options: List[QuestionOption]) -> Tuple[Optional[st
     except Exception:
         expected_text = None
         expected_options = []
-    
     return expected_text, expected_options
 
 
@@ -402,7 +414,7 @@ def attach_student_responses(students: List[Dict[str, Any]], questions: List[Dic
     for qentry in questions:
         qobj = qentry.get('question')
         qtitle = getattr(qobj, 'title', None) or f"Pregunta {getattr(qobj, 'id', '')}"
-        expected_text, expected_options = extract_expected_answers(qentry.get('options', []))
+        expected_text, expected_options = extract_expected_answers(qentry.get('options', []), qobj)
 
         for r in qentry.get('responses', []):
             student_id = r.get('student_id')
@@ -622,7 +634,7 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                         pass
                     
                     # Enrich responses
-                    expected_text, expected_options = extract_expected_answers(entry.get('options', []))
+                    expected_text, expected_options = extract_expected_answers(entry.get('options', []), qobj)
                     qtype = getattr(qobj, 'qtype', None)
                     
                     enriched_resp_list = [

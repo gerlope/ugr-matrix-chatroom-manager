@@ -79,11 +79,12 @@ class Question(models.Model):
     title = models.TextField(null=True, blank=True)
     body = models.TextField()
     qtype = models.TextField()  # stored as enum in PG; keep text here
+    expected_answer = models.TextField(null=True, blank=True)
     start_at = models.DateTimeField(null=True, blank=True)
     end_at = models.DateTimeField(null=True, blank=True)
     manual_active = models.BooleanField(default=False)
     allow_multiple_submissions = models.BooleanField(default=False)
-    allow_multiple_answers = models.BooleanField(default=False)
+    allow_multiple_selections = models.BooleanField(default=False)
     close_on_first_correct = models.BooleanField(default=False)
     close_triggered = models.BooleanField(default=False)
     created_at = models.DateTimeField(null=True, auto_now_add=True)

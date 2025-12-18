@@ -16,7 +16,7 @@ from core.db.constants import (
     COL_USER_IS_TEACHER,
     get_db_modules,
 )
-from core.moodle import fetch_user_courses
+from core.moodle import fetch_user_courses, fetch_course_teachers
 
 USAGE = "!reinvitar"
 DESCRIPTION = "Te invita a las salas generales de tus cursos de Moodle y muestra enlaces."
@@ -80,18 +80,9 @@ async def run(client, room_id, event, args):
     # Check if user is a teacher
     caller_is_teacher = bool(user_row.get(COL_USER_IS_TEACHER))
 
-    # Filter out _teachers rooms unless the caller is a teacher
-    if not caller_is_teacher:
-        general_rooms = [
-            r for r in general_rooms
-            if not (r.get(COL_ROOM_SHORTCODE) or "").endswith("_teachers")
-        ]
-        if not general_rooms:
-            await client.send_text(
-                room_id,
-                "ℹ️ No hay salas generales (no de profesores) registradas para tus cursos.",
-            )
-            return
+    # We'll check teacher-role per-course for rooms whose shortcode ends with "_teachers".
+    # Cache course -> set(teacher_moodle_ids) to avoid repeated Moodle requests.
+    teachers_cache = {}
 
     invited_count = 0
     already_in_count = 0
@@ -116,7 +107,33 @@ async def run(client, room_id, event, args):
         course_label = course_names.get(course_id, f"Curso {course_id}") if course_id else shortcode
 
         link = _build_matrix_link(target_room_id)
-        room_links.append(f"• {course_label}: {link}")
+
+        # If this is a teacher-only room (shortcode endswith _teachers) ensure the
+        # caller is actually a teacher in that Moodle course. A teacher in one
+        # course can be a student in another, so we check per-course role.
+        is_teacher_room = (str(shortcode).endswith("_teachers"))
+        if is_teacher_room and course_id:
+            try:
+                cid_int = int(course_id)
+            except Exception:
+                cid_int = None
+            if cid_int is None:
+                # Cannot determine course teachers; skip inviting to be safe
+                teacher_room_skipped += 1
+                continue
+            if cid_int not in teachers_cache:
+                try:
+                    teachers = await fetch_course_teachers(cid_int)
+                    # extract moodle ids
+                    teachers_cache[cid_int] = {int(p.get('id')) for p in teachers if p.get('id') is not None}
+                except Exception:
+                    teachers_cache[cid_int] = set()
+            # If caller is not in the teachers set, skip this room
+            if moodle_user_id not in teachers_cache.get(cid_int, set()):
+                continue
+            
+        # Record link for summary
+        room_links.append(f"• {course_label} {'(Profesores)' if is_teacher_room else ''}: {link}")
 
         # Check if user is already in the room using room state
         if await is_user_in_room(target_room_id, event.sender):
@@ -141,7 +158,6 @@ async def run(client, room_id, event, args):
         summary_parts.append(f"ℹ️ Ya estabas en {already_in_count} sala(s).")
     if invite_errors:
         summary_parts.append(f"⚠️ Errores en {len(invite_errors)} sala(s): " + "; ".join(invite_errors[:3]))
-
     links_text = "\n".join(room_links)
     message = (
         "📋 Salas generales de tus cursos:\n"

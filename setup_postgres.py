@@ -104,7 +104,6 @@ async def check_user_exists(session, user_id):
     headers = {'Authorization': f'Bearer {MATRIX_ADMIN_TOKEN}'}
     
     async with session.get(url, headers=headers, timeout=20) as resp:
-        print(f"Checking user {user_id}: {await resp.text()}")
         return resp.status == 200
 
 async def create_matrix_user(session, localpart, password, displayname=None):
@@ -119,7 +118,7 @@ async def create_matrix_user(session, localpart, password, displayname=None):
     # Create new user
     url = f"{HOMESERVER}/_synapse/admin/v2/users/{user_id}"
     headers = {'Authorization': f'Bearer {MATRIX_ADMIN_TOKEN}', 'Content-Type': 'application/json'}
-    body = {"password": password}
+    body = {} #"password": password
     if displayname:
         body["displayname"] = displayname
 

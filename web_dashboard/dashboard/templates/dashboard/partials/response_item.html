@@ -67,11 +67,11 @@
                 <span class="inline-block px-2 py-1 text-xs rounded border text-gray-700 border-gray-300 bg-gray-50">{{ so.option_key }} — {{ so.text }}</span>
               {% else %}
                 {# For questions, show neutral or correct/incorrect based on toggle #}
-                <span class="response-neutral inline-block px-2 py-1 text-xs rounded border text-gray-700 border-gray-300 bg-gray-50" {% if is_general_room %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }}</span>
+                <span class="response-neutral inline-block px-2 py-1 text-xs rounded border text-gray-700 border-gray-300 bg-gray-50" {% if is_general_room == True or is_general_room == 'True' %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }}</span>
                 {% if so.is_correct %}
-                  <span class="response-correct inline-block px-2 py-1 text-xs rounded border text-green-700 border-green-200 bg-green-50" {% if not is_general_room %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }} ✓</span>
+                  <span class="response-correct inline-block px-2 py-1 text-xs rounded border text-green-700 border-green-200 bg-green-50" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }} ✓</span>
                 {% else %}
-                  <span class="response-incorrect inline-block px-2 py-1 text-xs rounded border text-red-700 border-red-200 bg-red-50" {% if not is_general_room %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }} ✗</span>
+                  <span class="response-incorrect inline-block px-2 py-1 text-xs rounded border text-red-700 border-red-200 bg-red-50" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>{{ so.option_key }} — {{ so.text }} ✗</span>
                 {% endif %}
               {% endif %}
             {% endfor %}
@@ -81,9 +81,9 @@
         {% endif %}
 
         {% if r.expected_text %}
-          <div class="expected-answer text-xs text-gray-500 mt-2" {% if not is_general_room %}style="display:none"{% endif %}>Respuesta esperada: <strong>{{ r.expected_text }}</strong></div>
+          <div class="expected-answer text-xs text-gray-500 mt-2" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>Respuesta esperada: <strong>{{ r.expected_text }}</strong></div>
         {% elif r.expected_options %}
-          <div class="expected-answer text-xs text-gray-500 mt-2" {% if not is_general_room %}style="display:none"{% endif %}>Opciones correctas:
+          <div class="expected-answer text-xs text-gray-500 mt-2" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>Opciones correctas:
             {% for o in r.expected_options %}
               <div class="ml-2">- {{ o.option_key }} — {{ o.text }}</div>
             {% endfor %}

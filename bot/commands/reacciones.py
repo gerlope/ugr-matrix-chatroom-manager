@@ -56,7 +56,7 @@ async def run(client, room_id, event, args):
                     if last_teacher is not None:
                         texto += "\n"
                     last_teacher = r[JOINED_REACTION_TEACHER_MATRIX_ID]
-                    texto += f"    👤 Profesor: {r[JOINED_REACTION_TEACHER_MATRIX_ID]} (Moodle ID: {r[JOINED_REACTION_TEACHER_MOODLE_ID]})\n"
+                    texto += f"    👤 Profesor: {r[JOINED_REACTION_TEACHER_MATRIX_ID]}\n"
                 texto += f"        • {r[COL_REACTION_EMOJI]} - {r[COL_REACTION_COUNT]}\n"
 
     await client.send_text(room_id, texto)
