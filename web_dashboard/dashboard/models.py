@@ -87,6 +87,7 @@ class Question(models.Model):
     allow_multiple_selections = models.BooleanField(default=False)
     close_on_first_correct = models.BooleanField(default=False)
     close_triggered = models.BooleanField(default=False)
+    allow_late = models.BooleanField(default=False)
     created_at = models.DateTimeField(null=True, auto_now_add=True)
 
     class Meta:

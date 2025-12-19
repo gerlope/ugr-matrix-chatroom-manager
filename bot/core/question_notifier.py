@@ -122,6 +122,8 @@ class QuestionNotifier:
                 flags.append("🔁 Permite múltiples envíos")
             if q.get("close_on_first_correct"):
                 flags.append("🏁 Cierra al primer acierto")
+            if q.get("allow_late"):
+                flags.append("⏰ Permite tardías")
             
             flags_text = " · ".join(flags)
             

@@ -135,11 +135,21 @@
       <p id="question_time_error" class="text-red-600 text-sm mb-3 hidden"></p>
   <p id="question_options_error" class="text-red-600 text-sm mb-3 hidden"></p>
 
-      <div class="mb-4 space-y-2">
-        <label class="flex items-center space-x-2"><input type="checkbox" name="allow_multiple_submissions" class="rounded" {% if create_question_form.allow_multiple_submissions.value %}checked{% endif %}> Permitir varios envíos por alumno</label>
+      <div class="mb-4 space-y-2" x-data="{ closeOnFirst: false, allowLate: false }">
+        <label class="flex items-center space-x-2">
+          <input type="checkbox" name="allow_multiple_submissions" class="rounded" {% if create_question_form.allow_multiple_submissions.value %}checked{% endif %}>
+          <span>Permitir varios envíos por alumno</span>
+        </label>
         <template x-if="qtype != 'essay' && qtype != 'poll'">
-          <label class="flex items-center space-x-2"><input type="checkbox" name="close_on_first_correct" class="rounded" {% if create_question_form.close_on_first_correct.value %}checked{% endif %}> Cerrar tras la primera respuesta correcta</label>
+          <label class="flex items-center space-x-2">
+            <input type="checkbox" name="close_on_first_correct" class="rounded" x-model="closeOnFirst" @change="if(closeOnFirst) allowLate = false" :disabled="allowLate" {% if create_question_form.close_on_first_correct.value %}checked{% endif %}>
+            <span :class="{ 'text-gray-400': allowLate }">Cerrar tras la primera respuesta correcta</span>
+          </label>
         </template>
+        <label class="flex items-center space-x-2">
+          <input type="checkbox" name="allow_late" class="rounded" x-model="allowLate" @change="if(allowLate) closeOnFirst = false" :disabled="closeOnFirst" {% if create_question_form.allow_late.value %}checked{% endif %}>
+          <span :class="{ 'text-gray-400': closeOnFirst }">Permitir entregas tardías</span>
+        </label>
       </div>
 
       <div class="flex justify-end space-x-2">

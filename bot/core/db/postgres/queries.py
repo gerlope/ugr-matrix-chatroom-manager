@@ -268,6 +268,7 @@ async def get_active_questions_for_courses(course_ids: list):
                      q.{COL_QUESTION_ALLOW_MULTIPLE_SELECTIONS},
                      q.{COL_QUESTION_ALLOW_MULTIPLE_SUBMISSIONS},
                      q.{COL_QUESTION_CLOSE_ON_FIRST_CORRECT},
+                     q.{COL_QUESTION_ALLOW_LATE},
                    r.{COL_ROOM_ID} AS room_db_id,
                    r.{COL_ROOM_ROOM_ID} AS room_matrix_id,
                    r.{COL_ROOM_SHORTCODE} AS room_shortcode,
@@ -307,6 +308,7 @@ async def get_question_options(question_id: int):
             SELECT {COL_QUESTION_OPTION_ID},
                    {COL_QUESTION_OPTION_KEY},
                    {COL_QUESTION_OPTION_TEXT},
+                   {COL_QUESTION_OPTION_IS_CORRECT},
                    {COL_QUESTION_OPTION_POSITION}
             FROM {TABLE_QUESTION_OPTIONS}
             WHERE {COL_QUESTION_OPTION_QUESTION_ID} = $1
@@ -360,6 +362,7 @@ async def get_all_currently_active_questions():
                    q.{COL_QUESTION_ALLOW_MULTIPLE_SELECTIONS},
                    q.{COL_QUESTION_ALLOW_MULTIPLE_SUBMISSIONS},
                    q.{COL_QUESTION_CLOSE_ON_FIRST_CORRECT},
+                   q.{COL_QUESTION_ALLOW_LATE},
                    r.{COL_ROOM_ID} AS room_db_id,
                    r.{COL_ROOM_ROOM_ID} AS room_matrix_id,
                    r.{COL_ROOM_SHORTCODE} AS room_shortcode
@@ -384,4 +387,112 @@ async def get_all_currently_active_questions():
             """
         )
     return [dict(row) for row in rows]
+
+
+# ────────────────────────────────
+# Question Responses
+# ────────────────────────────────
+
+@db_safe(default=None)
+async def get_question_by_id(question_id: int):
+    """Obtiene una pregunta por su ID con toda la información necesaria."""
+    async with conn_module.pool.acquire() as conn:
+        return await conn.fetchrow(
+            f"""
+            SELECT q.*,
+                   r.{COL_ROOM_ROOM_ID} AS room_matrix_id,
+                   r.{COL_ROOM_MOODLE_COURSE_ID} AS room_course_id,
+                   r.{COL_ROOM_MOODLE_GROUP} AS room_moodle_group
+            FROM {TABLE_QUESTIONS} q
+            LEFT JOIN {TABLE_ROOMS} r ON q.{COL_QUESTION_ROOM_ID} = r.{COL_ROOM_ID}
+            WHERE q.{COL_QUESTION_ID} = $1
+            """,
+            question_id,
+        )
+
+@db_safe(default=None)
+async def get_student_response_count(question_id: int, student_id: int):
+    """Obtiene el número de respuestas del estudiante para una pregunta."""
+    async with conn_module.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""
+            SELECT COUNT(*) as count, MAX({COL_RESPONSE_VERSION}) as max_version
+            FROM {TABLE_QUESTION_RESPONSES}
+            WHERE {COL_RESPONSE_QUESTION_ID} = $1
+              AND {COL_RESPONSE_STUDENT_ID} = $2
+            """,
+            question_id,
+            student_id,
+        )
+    return dict(row) if row else {"count": 0, "max_version": 0}
+
+
+@db_safe(default=None)
+async def insert_question_response(
+    question_id: int,
+    student_id: int,
+    answer_text: str = None,
+    option_id: int = None,
+    score: float = None,
+    is_graded: bool = False,
+    response_version: int = 1,
+    late: bool = False,
+):
+    """Inserta una respuesta a una pregunta."""
+    async with conn_module.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""
+            INSERT INTO {TABLE_QUESTION_RESPONSES}
+                ({COL_RESPONSE_QUESTION_ID}, {COL_RESPONSE_STUDENT_ID}, 
+                 {COL_RESPONSE_ANSWER_TEXT}, {COL_RESPONSE_OPTION_ID},
+                 {COL_RESPONSE_SCORE}, {COL_RESPONSE_IS_GRADED},
+                 {COL_RESPONSE_VERSION}, {COL_RESPONSE_LATE})
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            RETURNING {COL_RESPONSE_ID}
+            """,
+            question_id,
+            student_id,
+            answer_text,
+            option_id,
+            score,
+            is_graded,
+            response_version,
+            late,
+        )
+    return row[COL_RESPONSE_ID] if row else None
+
+
+@db_safe(default=False)
+async def insert_response_options(response_id: int, option_ids: list):
+    """Inserta las opciones seleccionadas para una respuesta multi-select."""
+    if not option_ids:
+        return True
+    async with conn_module.pool.acquire() as conn:
+        for opt_id in option_ids:
+            await conn.execute(
+                f"""
+                INSERT INTO {TABLE_RESPONSE_OPTIONS}
+                    ({COL_RESPONSE_OPTIONS_RESPONSE_ID}, {COL_RESPONSE_OPTIONS_OPTION_ID})
+                VALUES ($1, $2)
+                ON CONFLICT DO NOTHING
+                """,
+                response_id,
+                opt_id,
+            )
+    return True
+
+
+@db_safe(default=False)
+async def set_question_close_triggered(question_id: int):
+    """Marca una pregunta como cerrada (close_triggered = TRUE)."""
+    async with conn_module.pool.acquire() as conn:
+        await conn.execute(
+            f"""
+            UPDATE {TABLE_QUESTIONS}
+            SET {COL_QUESTION_CLOSE_TRIGGERED} = TRUE
+            WHERE {COL_QUESTION_ID} = $1
+            """,
+            question_id,
+        )
+    return True
 

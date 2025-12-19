@@ -176,7 +176,8 @@ CREATE TABLE IF NOT EXISTS questions (
     end_at TIMESTAMP WITH TIME ZONE,
     manual_active BOOLEAN DEFAULT FALSE,
     allow_multiple_submissions BOOLEAN DEFAULT FALSE,
-    allow_multiple_selections BOOLEAN DEFAULT FALSE, -- for multi-select questions
+    allow_multiple_selections BOOLEAN DEFAULT FALSE,
+    allow_late BOOLEAN DEFAULT FALSE,
     close_on_first_correct BOOLEAN DEFAULT FALSE,
     close_triggered BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()

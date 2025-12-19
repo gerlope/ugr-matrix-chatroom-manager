@@ -48,9 +48,98 @@ logger = logging.getLogger(__name__)
 # Score distribution helpers
 # ---------------------------------------------------------------------------
 
-def _calculate_score_distribution(responses_list: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _filter_latest_submissions(responses_list: List[Dict[str, Any]], group_by: str = 'student') -> List[Dict[str, Any]]:
+    """Filter responses to only include the latest submission per student or per question.
+    
+    For questions with allow_multiple_submissions, only the response with the highest
+    response_version for each group is included. For questions without multiple
+    submissions, all responses are returned.
+    
+    Args:
+        responses_list: List of response dictionaries
+        group_by: 'student' to group by student_id (for question-level charts),
+                  'question' to group by question_id (for student-level charts)
+    """
+    if not responses_list:
+        return responses_list
+    
+    # Check if any responses are from multiple submission questions
+    allow_multiple = any(r.get('allow_multiple_submissions') for r in responses_list)
+    if not allow_multiple:
+        return responses_list
+    
+    # Group by the appropriate key and keep only the latest version
+    key_field = 'student_id' if group_by == 'student' else 'question_id'
+    latest_by_key: Dict[int, Dict[str, Any]] = {}
+    for r in responses_list:
+        # Only filter responses from multiple submission questions
+        if not r.get('allow_multiple_submissions'):
+            # Non-multiple submission responses are always kept
+            key = r.get(key_field)
+            if key is not None:
+                latest_by_key[key] = r
+            continue
+        
+        key = r.get(key_field)
+        if key is None:
+            continue
+        version = r.get('response_version', 1)
+        if key not in latest_by_key or version > latest_by_key[key].get('response_version', 1):
+            latest_by_key[key] = r
+    
+    return list(latest_by_key.values())
+
+
+def _mark_latest_submissions(responses_list: List[Dict[str, Any]]) -> None:
+    """Mark responses that are the latest submission for their student.
+    
+    Adds 'is_latest_submission' key to each response dict in-place.
+    For questions without multiple submissions, all responses are marked as latest.
+    """
+    if not responses_list:
+        return
+    
+    # Check if this is a multiple submissions question
+    allow_multiple = any(r.get('allow_multiple_submissions') for r in responses_list)
+    
+    if not allow_multiple:
+        # All responses are "latest" if multiple submissions not allowed
+        for r in responses_list:
+            r['is_latest_submission'] = True
+        return
+    
+    # Find the highest version per student
+    latest_version_by_student: Dict[int, int] = {}
+    for r in responses_list:
+        student_id = r.get('student_id')
+        if student_id is None:
+            continue
+        version = r.get('response_version', 1)
+        if student_id not in latest_version_by_student or version > latest_version_by_student[student_id]:
+            latest_version_by_student[student_id] = version
+    
+    # Mark each response
+    for r in responses_list:
+        student_id = r.get('student_id')
+        version = r.get('response_version', 1)
+        r['is_latest_submission'] = (student_id in latest_version_by_student and 
+                                      version == latest_version_by_student[student_id])
+
+
+def _calculate_score_distribution(responses_list: List[Dict[str, Any]], only_latest: bool = False, group_by: str = 'student') -> Dict[str, Any]:
     """Calculate score distribution with percentages and offsets for pie chart.
-    Only includes graded responses (is_graded=True)."""
+    Only includes graded responses (is_graded=True).
+    
+    Args:
+        responses_list: List of response dictionaries
+        only_latest: If True, only count the latest submission per group
+        group_by: 'student' for question-level charts (latest per student),
+                  'question' for student-level charts (latest per question)
+    """
+    # Optionally filter to latest submissions only
+    if only_latest:
+        responses_list = _filter_latest_submissions(responses_list, group_by=group_by)
+    
     dist = {'bracket_0_49': 0, 'bracket_50_74': 0, 'bracket_75_99': 0, 'bracket_100': 0, 'no_score': 0}
     
     # Filter to only graded responses
@@ -450,10 +539,10 @@ def attach_student_responses(students: List[Dict[str, Any]], questions: List[Dic
             pass
         s['responses'] = rlist
         
-        # Calculate score distributions
-        s['score_distribution'] = _calculate_score_distribution(rlist)
+        # Calculate score distributions (only count latest submission per question for student charts)
+        s['score_distribution'] = _calculate_score_distribution(rlist, only_latest=True, group_by='question')
         manual_graded = [er for er in rlist if er.get('grader_id') is not None]
-        s['score_distribution_manual'] = _calculate_score_distribution(manual_graded)
+        s['score_distribution_manual'] = _calculate_score_distribution(manual_graded, only_latest=True, group_by='question')
         
         # Calculate participation (excluding questions from group-restricted rooms student is not part of)
         student_groups = s.get('groups', []) or []
@@ -606,6 +695,7 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                     
                     q_responses.setdefault(r.question_id, []).append({
                         'id': r.id,
+                        'question_id': r.question_id,
                         'student_id': r.student_id,
                         'student': students_map.get(r.student_id),
                         'option_id': r.option_id,
@@ -622,6 +712,9 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                         'room_shortcode': getattr(selected_room, 'shortcode', None),
                         'feedback': getattr(r, 'feedback', None),
                         'question_type': qtype,
+                        'late': getattr(r, 'late', False),
+                        'response_version': getattr(r, 'response_version', 1),
+                        'allow_multiple_submissions': getattr(question_obj, 'allow_multiple_submissions', False) if question_obj else False,
                     })
 
                 for entry in selected_questions:
@@ -641,15 +734,20 @@ def assemble_questions_for_room(selected_room, teacher_id: int) -> List[Dict[str
                         enrich_response_with_options(r, entry.get('options', []), expected_text, expected_options, qtype)
                         for r in resp_list
                     ]
+                    
+                    # Mark which responses are the latest submission per student
+                    _mark_latest_submissions(enriched_resp_list)
+                    
                     entry['responses'] = enriched_resp_list
                     
-                    # Calculate score distributions
-                    entry['score_distribution'] = _calculate_score_distribution(enriched_resp_list)
+                    # Calculate score distributions (only count latest submission per student)
+                    entry['score_distribution'] = _calculate_score_distribution(enriched_resp_list, only_latest=True)
                     manual_graded = [er for er in enriched_resp_list if er.get('grader_id') is not None]
-                    entry['score_distribution_manual'] = _calculate_score_distribution(manual_graded)
+                    entry['score_distribution_manual'] = _calculate_score_distribution(manual_graded, only_latest=True)
                     
                     # Calculate participation distribution (only for rooms bound to Moodle groups)
                     if moodle_group_student_ids is not None:
+                        # Count unique students who have submitted (any version counts as participation)
                         students_who_answered = len(set(er.get('student_id') for er in enriched_resp_list if er.get('student_id')))
                         entry['participation_distribution'] = _calculate_participation(students_who_answered, len(moodle_group_student_ids))
                     else:

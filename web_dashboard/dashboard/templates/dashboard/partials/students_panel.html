@@ -199,7 +199,7 @@
           
           <ul class="divide-y text-sm text-gray-700">
             {% for r in student.responses %}
-              {% include 'dashboard/partials/response_item.html' with r=r students=students show_student_name=False is_general_room=selected_room.teacher_id|yesno:"False,True,False" %}
+              {% include 'dashboard/partials/response_item.html' with r=r students=students show_student_name=False is_general_room=True %}
             {% endfor %}
           </ul>
         {% else %}

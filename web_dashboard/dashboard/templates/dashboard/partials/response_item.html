@@ -49,7 +49,18 @@
           {% if r.room_shortcode %}
             <div class="text-xs text-gray-400">Sala: {{ r.room_shortcode }}</div>
           {% endif %}
-          <div class="text-xs text-gray-500">{{ r.submitted_at|date:"Y-m-d H:i" }}</div>
+          <div class="text-xs text-gray-500 flex items-center gap-2">
+            <span>{{ r.submitted_at|date:"Y-m-d H:i" }}</span>
+            {% if r.allow_multiple_submissions and r.response_version %}
+              <span class="inline-block bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded font-medium">🔄 Intento #{{ r.response_version }}</span>
+              {% if r.is_latest_submission %}
+                <span class="inline-block bg-green-100 text-green-800 px-2 py-0.5 rounded font-semibold">✓ Última</span>
+              {% endif %}
+            {% endif %}
+            {% if r.late %}
+              <span class="inline-block bg-orange-100 text-orange-800 px-2 py-0.5 rounded font-semibold">⚠️ Tardía</span>
+            {% endif %}
+          </div>
         </div>
       </div>
 
@@ -76,18 +87,24 @@
               {% endif %}
             {% endfor %}
           </div>
-        {% elif r.option_id %}
-          <div class="text-xs text-gray-600">Opción seleccionada: <strong>{% if r.option_key %}{{ r.option_key }}{% else %}Opción no encontrada (ID: {{ r.option_id }}){% endif %}</strong></div>
         {% endif %}
 
-        {% if r.expected_text %}
-          <div class="expected-answer text-xs text-gray-500 mt-2" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>Respuesta esperada: <strong>{{ r.expected_text }}</strong></div>
-        {% elif r.expected_options %}
-          <div class="expected-answer text-xs text-gray-500 mt-2" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>Opciones correctas:
-            {% for o in r.expected_options %}
-              <div class="ml-2">- {{ o.option_key }} — {{ o.text }}</div>
-            {% endfor %}
-          </div>
+        {# Show expected answer for non-poll questions #}
+        {% if r.question_type != 'poll' %}
+          {% if r.expected_text %}
+            <div class="expected-answer text-xs text-green-600 mt-2" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>
+              <span class="font-medium">✓ Respuesta esperada:</span> {{ r.expected_text }}
+            </div>
+          {% elif r.expected_options %}
+            <div class="expected-answer text-xs text-green-600 mt-2" {% if is_general_room != True and is_general_room != 'True' %}style="display:none"{% endif %}>
+              <span class="font-medium">✓ {% if r.expected_options|length > 1 %}Opciones correctas:{% else %}Opción correcta:{% endif %}</span>
+              <div class="mt-1 flex flex-wrap gap-2">
+                {% for o in r.expected_options %}
+                  <span class="inline-block px-2 py-1 text-xs rounded border text-green-700 border-green-200 bg-green-50">{{ o.option_key }} — {{ o.text }}</span>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
         {% endif %}
       </div>
     </div>

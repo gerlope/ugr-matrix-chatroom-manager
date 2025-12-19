@@ -561,7 +561,8 @@ def create_question(request):
             manual_active=False,
             allow_multiple_submissions=form.cleaned_data.get('allow_multiple_submissions', False),
             allow_multiple_selections=form.cleaned_data.get('allow_multiple_selections', False),
-            close_on_first_correct=form.cleaned_data.get('close_on_first_correct', False)
+            close_on_first_correct=form.cleaned_data.get('close_on_first_correct', False),
+            allow_late=form.cleaned_data.get('allow_late', False)
         )
         if qtype == 'true_false':
             tf_correct = request.POST.get('tf_correct')

@@ -18,6 +18,7 @@ from core.db.constants import (
     COL_QUESTION_ALLOW_MULTIPLE_SELECTIONS,
     COL_QUESTION_ALLOW_MULTIPLE_SUBMISSIONS,
     COL_QUESTION_CLOSE_ON_FIRST_CORRECT,
+    COL_QUESTION_ALLOW_LATE,
     COL_USER_MOODLE_ID,
     get_db_modules,
 )
@@ -155,6 +156,8 @@ async def run(client, room_id, event, args):
                 flags.append("🔁 Permite múltiples envíos")
             if q.get(COL_QUESTION_CLOSE_ON_FIRST_CORRECT):
                 flags.append("🏁 Cierra al primer acierto")
+            if q.get(COL_QUESTION_ALLOW_LATE):
+                flags.append("⏰ Permite tardías")
             if flags:
                 lines.append(f"     {' · '.join(flags)}")
                 

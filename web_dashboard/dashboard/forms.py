@@ -33,6 +33,7 @@ class CreateQuestionForm(forms.Form):
     allow_multiple_selections = forms.BooleanField(required=False, initial=False)
     allow_multiple_submissions = forms.BooleanField(required=False, initial=False)
     close_on_first_correct = forms.BooleanField(required=False, initial=False, label='Cerrar tras primera correcta')
+    allow_late = forms.BooleanField(required=False, initial=False, label='Permitir entregas tardías')
 
 
 class CreateAvailabilityForm(forms.Form):

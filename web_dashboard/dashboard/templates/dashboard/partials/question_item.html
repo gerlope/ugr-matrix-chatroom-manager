@@ -57,6 +57,9 @@
           {% if q.allow_multiple_submissions %}
             <div class="inline-block bg-blue-100 text-blue-800 px-2 py-1 rounded mt-1">Varios envíos</div>
           {% endif %}
+          {% if q.allow_late %}
+            <div class="inline-block bg-orange-100 text-orange-800 px-2 py-1 rounded mt-1">Permite tardías</div>
+          {% endif %}
         </div>
         
         {# Pie chart and schedule dates side by side #}

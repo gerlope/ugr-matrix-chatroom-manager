@@ -79,6 +79,7 @@ COL_QUESTION_ALLOW_MULTIPLE_SUBMISSIONS = "allow_multiple_submissions"
 COL_QUESTION_ALLOW_MULTIPLE_SELECTIONS = "allow_multiple_selections"
 COL_QUESTION_CLOSE_ON_FIRST_CORRECT = "close_on_first_correct"
 COL_QUESTION_CLOSE_TRIGGERED = "close_triggered"
+COL_QUESTION_ALLOW_LATE = "allow_late"
 COL_QUESTION_CREATED_AT = "created_at"
 
 # Question Options
@@ -90,3 +91,28 @@ COL_QUESTION_OPTION_KEY = "option_key"
 COL_QUESTION_OPTION_TEXT = "text"
 COL_QUESTION_OPTION_IS_CORRECT = "is_correct"
 COL_QUESTION_OPTION_POSITION = "position"
+
+# Question Responses
+TABLE_QUESTION_RESPONSES = "question_responses"
+
+COL_RESPONSE_ID = "id"
+COL_RESPONSE_QUESTION_ID = "question_id"
+COL_RESPONSE_STUDENT_ID = "student_id"
+COL_RESPONSE_OPTION_ID = "option_id"
+COL_RESPONSE_ANSWER_TEXT = "answer_text"
+COL_RESPONSE_SUBMITTED_AT = "submitted_at"
+COL_RESPONSE_IS_GRADED = "is_graded"
+COL_RESPONSE_SCORE = "score"
+COL_RESPONSE_GRADER_ID = "grader_id"
+COL_RESPONSE_FEEDBACK = "feedback"
+COL_RESPONSE_VERSION = "response_version"
+COL_RESPONSE_LATE = "late"
+
+# Response Options (multi-select)
+TABLE_RESPONSE_OPTIONS = "response_options"
+
+COL_RESPONSE_OPTIONS_RESPONSE_ID = "response_id"
+COL_RESPONSE_OPTIONS_OPTION_ID = "option_id"
+
+# Expected answer column
+COL_QUESTION_EXPECTED_ANSWER = "expected_answer"
