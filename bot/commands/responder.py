@@ -254,9 +254,15 @@ async def run(client, room_id, event, args):
             is_graded = False
 
     elif qtype == "numeric":
-        # Numeric: compare with expected_answer with tolerance
+        # Numeric: check that answer is numeric, then compare with expected_answer with tolerance
         is_graded = True
         stored_answer = answer_text
+        # Try to parse answer as float
+        try:
+            float(answer_text.replace(",", "."))
+        except (ValueError, TypeError):
+            await client.send_text(room_id, "❌ La respuesta debe ser un número válido.")
+            return
         if expected_answer:
             if _check_numeric_answer(answer_text, expected_answer):
                 score = 100
