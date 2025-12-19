@@ -481,6 +481,50 @@ async def get_student_response_count(question_id: int, student_id: int):
     return dict(row) if row else {"count": 0, "max_version": 0}
 
 
+@db_safe(default=[])
+async def get_student_responses_for_question(question_id: int, student_id: int):
+    """Obtiene todas las respuestas de un estudiante para una pregunta, con info del corrector."""
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT r.{COL_RESPONSE_ID},
+                   r.{COL_RESPONSE_ANSWER_TEXT},
+                   r.{COL_RESPONSE_OPTION_ID},
+                   r.{COL_RESPONSE_SUBMITTED_AT},
+                   r.{COL_RESPONSE_IS_GRADED},
+                   r.{COL_RESPONSE_SCORE},
+                   r.{COL_RESPONSE_GRADER_ID},
+                   r.{COL_RESPONSE_FEEDBACK},
+                   r.{COL_RESPONSE_VERSION},
+                   r.{COL_RESPONSE_LATE},
+                   g.{COL_USER_MATRIX_ID} AS grader_matrix_id
+            FROM {TABLE_QUESTION_RESPONSES} r
+            LEFT JOIN {TABLE_USERS} g ON r.{COL_RESPONSE_GRADER_ID} = g.{COL_USER_ID}
+            WHERE r.{COL_RESPONSE_QUESTION_ID} = $1
+              AND r.{COL_RESPONSE_STUDENT_ID} = $2
+            ORDER BY r.{COL_RESPONSE_VERSION} ASC
+            """,
+            question_id,
+            student_id,
+        )
+    return [dict(row) for row in rows]
+
+
+@db_safe(default=[])
+async def get_response_option_ids(response_id: int):
+    """Obtiene los IDs de opciones seleccionadas para una respuesta."""
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+            SELECT {COL_RESPONSE_OPTIONS_OPTION_ID}
+            FROM {TABLE_RESPONSE_OPTIONS}
+            WHERE {COL_RESPONSE_OPTIONS_RESPONSE_ID} = $1
+            """,
+            response_id,
+        )
+    return [row[COL_RESPONSE_OPTIONS_OPTION_ID] for row in rows]
+
+
 @db_safe(default=None)
 async def insert_question_response(
     question_id: int,

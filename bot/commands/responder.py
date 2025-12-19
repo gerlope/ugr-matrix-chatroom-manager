@@ -298,13 +298,19 @@ async def run(client, room_id, event, args):
     late_note = " (⚠️ Entrega tardía)" if is_late else ""
     attempt_note = f" (🔄 Intento #{new_version})" if allow_multiple_submissions and new_version > 1 else ""
     
+    # Only show score if the question is now closed (either close_on_first_correct triggered, or it was already closing)
+    question_now_closed = close_on_first_correct and score == 100
+    
     if qtype in ("essay", "poll"):
         result_msg = f"✅ Tu respuesta a '{title}' ha sido registrada.{attempt_note}{late_note}"
-    elif is_graded and score is not None:
-        score_emoji = "🎉" if score == 100 else "📊"
-        result_msg = f"{score_emoji} Tu respuesta a '{title}' ha sido registrada.{attempt_note}{late_note}\n📈 Puntuación: {score:.0f}/100"
-        if close_on_first_correct and score == 100:
-            result_msg += "\n🏁 ¡Has cerrado la pregunta al ser el primero en acertar!"
+    elif question_now_closed:
+        # Show score only when the question closes due to first correct answer
+        score_emoji = "🎉"
+        result_msg = f"{score_emoji} Tu respuesta a '{title}' ha sido registrada.{attempt_note}{late_note}\n📈 Puntuación: {score:.0f}/100 (el profesor puede cambiarla)"
+        result_msg += "\n🏁 ¡Has cerrado la pregunta al ser el primero en acertar!"
+    elif is_graded:
+        # Question still active - don't show score
+        result_msg = f"✅ Tu respuesta a '{title}' ha sido registrada.{attempt_note}{late_note}\n🔒 Puntuación oculta hasta que cierre la pregunta. Podrás verla con !respuestas."
     else:
         result_msg = f"✅ Tu respuesta a '{title}' ha sido registrada. Pendiente de calificación.{attempt_note}{late_note}"
 

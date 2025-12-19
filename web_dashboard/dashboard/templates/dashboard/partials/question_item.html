@@ -3,7 +3,7 @@
   <div class="w-full text-left">
     <div class="w-full flex justify-between items-start text-left px-2 py-2 gap-4">
       <div class="flex-1">
-        <div class="font-semibold">{{ q.title|default:"(sin título)" }}</div>
+          <div class="font-semibold">#{{ q.id }} - {{ q.title|default:"(sin título)" }}</div>
         <div class="text-gray-700 text-sm mt-1">{{ q.body }}</div>
         <div class="text-xs text-gray-500 mt-1">Tipo: {{ q.qtype }} · Creada: {{ q.created_at|date:"Y-m-d H:i" }}</div>
         

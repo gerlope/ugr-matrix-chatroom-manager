@@ -502,7 +502,9 @@ def attach_student_responses(students: List[Dict[str, Any]], questions: List[Dic
     # Build enriched responses map
     for qentry in questions:
         qobj = qentry.get('question')
-        qtitle = getattr(qobj, 'title', None) or f"Pregunta {getattr(qobj, 'id', '')}"
+        qid = getattr(qobj, 'id', None)
+        qtitle_raw = getattr(qobj, 'title', None) or f"Pregunta {qid}"
+        qtitle = f"#{qid} - {qtitle_raw}" if qid else qtitle_raw
         expected_text, expected_options = extract_expected_answers(qentry.get('options', []), qobj)
 
         for r in qentry.get('responses', []):
