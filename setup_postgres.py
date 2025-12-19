@@ -106,7 +106,7 @@ async def check_user_exists(session, user_id):
     async with session.get(url, headers=headers, timeout=20) as resp:
         return resp.status == 200
 
-async def create_matrix_user(session, localpart, password, displayname=None):
+async def create_matrix_user(session, localpart, email, password, displayname):
     user_id = f"@{localpart}:{SERVER_NAME}"
     
     # Check if user already exists
@@ -118,9 +118,16 @@ async def create_matrix_user(session, localpart, password, displayname=None):
     # Create new user
     url = f"{HOMESERVER}/_synapse/admin/v2/users/{user_id}"
     headers = {'Authorization': f'Bearer {MATRIX_ADMIN_TOKEN}', 'Content-Type': 'application/json'}
-    body = {} #"password": password
-    if displayname:
-        body["displayname"] = displayname
+    body = {
+            "password": password, 
+            "threepids": [
+                {
+                    "medium": "email",
+                    "address": email
+                }
+            ], 
+            "displayname": displayname,
+        }
 
     async with session.put(url, headers=headers, json=body, timeout=20) as resp:
         if resp.status in (200, 201):
@@ -751,7 +758,7 @@ async def main():
 
                 try:
                     # Crear usuario si no existe
-                    await create_matrix_user(session, localpart, localpart, displayname)
+                    await create_matrix_user(session, localpart, email, localpart, displayname)
                     
                     # Insertar en base de datos
                     await conn.execute("""

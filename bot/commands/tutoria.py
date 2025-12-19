@@ -257,7 +257,7 @@ async def run(client, room_id, event, args):
         sender_is_teacher = event.sender == teacher_mxid
 
         if sender_is_teacher:
-            ok, detail, student_mxid = await tutoring_queue.teacher_acknowledge(target_room_id, event.sender)
+            ok, detail, student_mxid, student_notify_room = await tutoring_queue.teacher_acknowledge(target_room_id, event.sender)
             if ok and student_mxid:
                 invite_error = None
                 try:
@@ -272,11 +272,13 @@ async def run(client, room_id, event, args):
                         + (f"\n⚠️ No se pudo enviar la invitación automática: {invite_error}" if invite_error else "")
                     ),
                 )
+                # Send notification to the room where the student originally confirmed
+                notify_target = student_notify_room or student_mxid
                 await client.send_text(
-                    student_mxid,
+                    notify_target,
                     (
-                        f"👨‍🏫 El profesor {teacher_local} te ha invitado a la sala de tutoría."
-                        f"https://matrix.to/#/{target_room_id}"
+                        f"👨‍🏫 {student_alias}, el profesor {teacher_local} te ha invitado a la sala de tutoría. "
+                        f"https://matrix.to/#/{target_room_id} "
                         "Por favor, únete cuando puedas."
                     ),
                 )

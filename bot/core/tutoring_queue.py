@@ -257,20 +257,23 @@ class TutoringQueueManager:
             return False
         return queue.teacher_ack_required
 
-    async def teacher_acknowledge(self, room_id: str, teacher_mxid: str) -> Tuple[bool, str, Optional[str]]:
+    async def teacher_acknowledge(self, room_id: str, teacher_mxid: str) -> Tuple[bool, str, Optional[str], Optional[str]]:
+        """Returns (ok, detail, student_mxid, student_notify_room_id)."""
         async with self._lock:
             queue = self._queues.get(room_id)
             if not queue:
-                return False, "No existe una cola para esta sala.", None
+                return False, "No existe una cola para esta sala.", None, None
             if queue.teacher_mxid != teacher_mxid:
-                return False, "No eres el profesor asignado a esta sala.", None
+                return False, "No eres el profesor asignado a esta sala.", None, None
             if not queue.active_user:
-                return False, "No hay estudiantes confirmados esperando acceso.", None
+                return False, "No hay estudiantes confirmados esperando acceso.", None, None
             if not queue.teacher_ack_required:
-                return False, "Esta tutoría ya fue confirmada por el profesor.", queue.active_user
+                return False, "Esta tutoría ya fue confirmada por el profesor.", queue.active_user, None
             queue.teacher_ack_required = False
             student = queue.active_user
-        return True, "Confirmación registrada.", student
+            # The active user is always at the front of the queue
+            notify_room = queue.entries[0].notify_room_id if queue.entries else None
+        return True, "Confirmación registrada.", student, notify_room
 
     async def _notify_next(self, room_id: str) -> None:
         entry_info: Optional[Tuple[QueueEntry, RoomQueue]] = None

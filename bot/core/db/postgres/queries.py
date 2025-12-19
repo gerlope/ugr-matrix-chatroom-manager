@@ -316,3 +316,23 @@ async def get_question_options(question_id: int):
         )
     return [dict(row) for row in rows]
 
+
+@db_safe(default=False)
+async def is_tutoring_room(matrix_room_id: str) -> bool:
+    """
+    Returns True if the room is a tutoring room (no moodle_course_id) and active.
+    """
+    async with conn_module.pool.acquire() as conn:
+        row = await conn.fetchrow(
+            f"""
+            SELECT 1
+            FROM {TABLE_ROOMS}
+            WHERE {COL_ROOM_ROOM_ID} = $1
+              AND {COL_ROOM_MOODLE_COURSE_ID} IS NULL
+              AND {COL_ROOM_ACTIVE} = TRUE
+            LIMIT 1
+            """,
+            matrix_room_id,
+        )
+    return row is not None
+

@@ -3,7 +3,8 @@
 import importlib
 import pkgutil
 import commands
-from config import COMMAND_PREFIX
+from config import COMMAND_PREFIX, DB_TYPE
+from core.db.constants import get_db_modules
 
 COMMANDS = {}
 
@@ -42,6 +43,40 @@ async def execute_command(client, room_id, event, body):
     
     cmd = parts[0]
     args = parts[1:]
+
+    # ────────────────────────────────────────────────────────────────────────────────
+    # Room-type check: only allow commands in DM rooms or tutoring rooms.
+    # ────────────────────────────────────────────────────────────────────────────────
+    db = get_db_modules()[DB_TYPE]["queries"]
+
+    # Check if this is a tutoring room (no course, but teacher room in DB)
+    is_tutoring = await db.is_tutoring_room(room_id)
+
+    # Check if this is a DM (direct message) room by checking if it is a direct room state event
+    is_dm = False
+    try:
+        # A room is a DM if there are only 2 joined members (bot + user).
+        # Alternatively, we check for the room being marked as a direct room, but
+        # the simplest robust approach is to count joined members.
+        members_state = await client.get_joined_members(room_id)
+        if members_state and len(members_state) <= 2:
+            is_dm = True
+    except Exception:
+        pass
+
+    if not is_dm and not is_tutoring:
+        # Send warning message
+        await client.send_text(
+            room_id,
+            f"⚠️ {event.sender.split(':')[0][1:]}, los comandos solo están disponibles en mensajes directos con el bot o en salas de tutoría."
+        )
+        # If the command is `responder`, also redact the user's message
+        if cmd == "responder":
+            try:
+                await client.redact(room_id, event.event_id, reason="Ocultación de tu respuesta.")
+            except Exception:
+                pass
+        return
 
     if cmd in COMMANDS:
         try:
