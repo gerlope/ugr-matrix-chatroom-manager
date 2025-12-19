@@ -24,8 +24,8 @@ from core.db.constants import (
 )
 from core.moodle import fetch_user_courses, fetch_user_groups_in_course
 
-USAGE = "!preguntas"
-DESCRIPTION = "Muestra las preguntas activas de tus cursos."
+USAGE = "!preguntas [todas]"
+DESCRIPTION = "Muestra las preguntas activas de tus cursos. Usa 'todas' para ver también las inactivas."
 
 
 QTYPE_LABELS = {
@@ -83,11 +83,20 @@ async def run(client, room_id, event, args):
         await client.send_text(room_id, "❌ No se encontraron cursos válidos en Moodle.")
         return
 
-    # Get active questions for these courses
-    questions = await db.get_active_questions_for_courses(course_ids)
-    if not questions:
-        await client.send_text(room_id, "ℹ️ No hay preguntas activas en tus cursos.")
-        return
+    # Check if user wants to see all questions (not just active)
+    show_all = len(args) > 0 and args[0].lower() in ("todas", "all", "todo")
+    
+    # Get questions for these courses
+    if show_all:
+        questions = await db.get_all_questions_for_courses(course_ids)
+        if not questions:
+            await client.send_text(room_id, "ℹ️ No hay preguntas en tus cursos.")
+            return
+    else:
+        questions = await db.get_active_questions_for_courses(course_ids)
+        if not questions:
+            await client.send_text(room_id, "ℹ️ No hay preguntas activas en tus cursos.")
+            return
 
     # Get user's groups for each course (to filter by moodle_group)
     user_groups_by_course: Dict[int, Set[str]] = {}
@@ -112,7 +121,10 @@ async def run(client, room_id, event, args):
         filtered_questions.append(q)
 
     if not filtered_questions:
-        await client.send_text(room_id, "ℹ️ No hay preguntas activas en tus cursos/grupos.")
+        if show_all:
+            await client.send_text(room_id, "ℹ️ No hay preguntas en tus cursos/grupos.")
+        else:
+            await client.send_text(room_id, "ℹ️ No hay preguntas activas en tus cursos/grupos.")
         return
 
     # Organize questions by room
@@ -131,7 +143,19 @@ async def run(client, room_id, event, args):
 
     # Build output message
     total_count = len(filtered_questions)
-    lines = [f"📋 Preguntas activas ({total_count})\n"]
+    if show_all:
+        lines = [f"📋 Todas las preguntas ({total_count})\n"]
+    else:
+        lines = [f"📋 Preguntas activas ({total_count})\n"]
+
+    # Status labels for display
+    STATUS_LABELS = {
+        "active": "🟢 Activa",
+        "scheduled": "📅 Programada",
+        "ended": "🔴 Finalizada",
+        "closed": "🔒 Cerrada",
+        "inactive": "⚪ Inactiva",
+    }
 
     for room_name, room_questions in questions_by_room.items():
         lines.append("─" * 25)
@@ -144,9 +168,15 @@ async def run(client, room_id, event, args):
             body = q.get(COL_QUESTION_BODY) or ""
             qtype = q.get(COL_QUESTION_QTYPE) or "unknown"
             qtype_label = QTYPE_LABELS.get(qtype, f"📌 {qtype}")
+            question_status = q.get("question_status", "active")
             flags = []
             
             lines.append(f"\n  🔹 #{qid} │ {title}")
+            
+            # Show status if viewing all questions
+            if show_all:
+                status_label = STATUS_LABELS.get(question_status, question_status)
+                lines.append(f"     {status_label}")
             
             # Behaviour indicators
             flags.append(qtype_label)

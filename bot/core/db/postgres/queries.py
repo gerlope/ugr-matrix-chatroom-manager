@@ -244,6 +244,60 @@ async def decrease_or_delete_reaccion(
 # ────────────────────────────────
 
 @db_safe(default=[])
+async def get_all_questions_for_courses(course_ids: list):
+    """
+    Devuelve todas las preguntas para una lista de cursos (activas o no).
+    Incluye información sobre el estado actual de cada pregunta.
+    """
+    if not course_ids:
+        return []
+    async with conn_module.pool.acquire() as conn:
+        rows = await conn.fetch(
+            f"""
+                 SELECT q.{COL_QUESTION_ID},
+                     q.{COL_QUESTION_TITLE},
+                     q.{COL_QUESTION_BODY},
+                     q.{COL_QUESTION_QTYPE},
+                     q.{COL_QUESTION_START_AT},
+                     q.{COL_QUESTION_END_AT},
+                     q.{COL_QUESTION_MANUAL_ACTIVE},
+                     q.{COL_QUESTION_CLOSE_TRIGGERED},
+                     q.{COL_QUESTION_ALLOW_MULTIPLE_SELECTIONS},
+                     q.{COL_QUESTION_ALLOW_MULTIPLE_SUBMISSIONS},
+                     q.{COL_QUESTION_CLOSE_ON_FIRST_CORRECT},
+                     q.{COL_QUESTION_ALLOW_LATE},
+                   r.{COL_ROOM_ID} AS room_db_id,
+                   r.{COL_ROOM_ROOM_ID} AS room_matrix_id,
+                   r.{COL_ROOM_SHORTCODE} AS room_shortcode,
+                   r.{COL_ROOM_MOODLE_COURSE_ID} AS room_course_id,
+                   r.{COL_ROOM_MOODLE_GROUP} AS room_moodle_group,
+                   CASE
+                       WHEN q.{COL_QUESTION_CLOSE_TRIGGERED} = TRUE THEN 'closed'
+                       WHEN q.{COL_QUESTION_MANUAL_ACTIVE} = TRUE THEN 'active'
+                       WHEN q.{COL_QUESTION_START_AT} IS NOT NULL
+                            AND q.{COL_QUESTION_START_AT} <= NOW()
+                            AND (q.{COL_QUESTION_END_AT} IS NULL OR q.{COL_QUESTION_END_AT} >= NOW()) THEN 'active'
+                       WHEN q.{COL_QUESTION_START_AT} IS NULL
+                            AND q.{COL_QUESTION_END_AT} IS NOT NULL
+                            AND q.{COL_QUESTION_END_AT} >= NOW() THEN 'active'
+                       WHEN q.{COL_QUESTION_START_AT} IS NOT NULL
+                            AND q.{COL_QUESTION_START_AT} > NOW() THEN 'scheduled'
+                       WHEN q.{COL_QUESTION_END_AT} IS NOT NULL
+                            AND q.{COL_QUESTION_END_AT} < NOW() THEN 'ended'
+                       ELSE 'inactive'
+                   END AS question_status
+            FROM {TABLE_QUESTIONS} q
+            JOIN {TABLE_ROOMS} r ON q.{COL_QUESTION_ROOM_ID} = r.{COL_ROOM_ID}
+            WHERE r.{COL_ROOM_MOODLE_COURSE_ID} = ANY($1::int[])
+              AND r.{COL_ROOM_ACTIVE} = TRUE
+            ORDER BY r.{COL_ROOM_SHORTCODE}, q.{COL_QUESTION_ID}
+            """,
+            course_ids,
+        )
+    return [dict(row) for row in rows]
+
+
+@db_safe(default=[])
 async def get_active_questions_for_courses(course_ids: list):
     """
     Devuelve las preguntas activas para una lista de cursos.
