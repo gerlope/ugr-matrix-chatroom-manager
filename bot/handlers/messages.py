@@ -3,6 +3,7 @@
 from mautrix.types import EventType, MessageType
 from core.command_registry import execute_command
 from core.runtime_state import should_process_event
+from core.tutoring_queue import tutoring_queue
 
 def register(client):
     async def on_message(event):
@@ -25,6 +26,10 @@ def register(client):
         body = event.content.get("body", "").strip()
         if not body:
             return
+        
+        # Record message if this room has an active tutoring session
+        if tutoring_queue.is_recording(event.room_id):
+            tutoring_queue.record_message(event.room_id, event.sender, body)
         
         print(f"[Mensaje] {event.sender}: {body}")
         await execute_command(client, event.room_id, event, body)

@@ -255,9 +255,12 @@ def register(client):
             if room_row:
                 room_data = dict(room_row)
                 if room_data.get(COL_ROOM_MOODLE_COURSE_ID) in (None, ""):
-                    released = await tutoring_queue.handle_room_leave(room_id, event.state_key)
+                    released, notify_room, transcript = await tutoring_queue.handle_room_leave(room_id, event.state_key)
                     if released:
                         print(f"[INFO] Cola de tutoría liberada automáticamente en {room_id}")
+                        # Send transcript to the student if available
+                        if transcript and notify_room:
+                            await tutoring_queue.send_transcript_file(notify_room, transcript)
 
         # Detecta invitación a otros usuarios
         elif membership == Membership.INVITE:

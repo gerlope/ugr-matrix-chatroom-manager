@@ -1,14 +1,32 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+
+from mautrix.types import MediaMessageEventContent, MessageType
 
 
 class QueueState:
     FREE = "Libre"
     OCCUPIED = "Ocupada"
+
+
+@dataclass
+class TranscriptMessage:
+    sender: str
+    body: str
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "sender": self.sender,
+            "body": self.body,
+            "timestamp": self.timestamp.isoformat(),
+        }
 
 
 @dataclass
@@ -38,9 +56,30 @@ class TutoringQueueManager:
         self._lock = asyncio.Lock()
         self._client = None
         self._confirmation_timeout = confirmation_timeout
+        # Transcript recording: room_id -> list of TranscriptMessage
+        self._transcripts: Dict[str, List[TranscriptMessage]] = {}
 
     def configure_client(self, client) -> None:
         self._client = client
+
+    def is_recording(self, room_id: str) -> bool:
+        """Check if a room is currently recording messages."""
+        return room_id in self._transcripts
+
+    def record_message(self, room_id: str, sender: str, body: str) -> None:
+        """Record a message in an active tutoring session."""
+        if room_id not in self._transcripts:
+            return
+        self._transcripts[room_id].append(TranscriptMessage(sender=sender, body=body))
+
+    def _start_recording(self, room_id: str) -> None:
+        """Start recording messages for a tutoring session."""
+        self._transcripts[room_id] = []
+
+    def _stop_recording(self, room_id: str) -> List[Dict[str, Any]]:
+        """Stop recording and return the transcript as a list of dicts."""
+        messages = self._transcripts.pop(room_id, [])
+        return [msg.to_dict() for msg in messages]
 
     async def enqueue(
         self,
@@ -114,29 +153,35 @@ class TutoringQueueManager:
             pending_task.cancel()
         return True, "Acceso confirmado. ¡Aprovecha tu tutoría!"
 
-    async def release_current(self, room_id: str) -> Tuple[bool, Optional[str]]:
+    async def release_current(self, room_id: str) -> Tuple[bool, Optional[str], Optional[str], List[Dict[str, Any]]]:
+        """Returns (ok, removed_user_mxid, notify_room_id, transcript)."""
         async with self._lock:
             queue = self._queues.get(room_id)
             if not queue:
-                return False, "No existe una cola para esta sala."
+                return False, "No existe una cola para esta sala.", None, []
 
             removed_user = None
+            notify_room = None
             pending_task = queue.pending_task
             if queue.entries:
-                removed_user = queue.entries.pop(0).user_mxid
+                entry = queue.entries.pop(0)
+                removed_user = entry.user_mxid
+                notify_room = entry.notify_room_id
             queue.active_user = None
             queue.pending_user = None
             queue.pending_task = None
             queue.teacher_ack_required = False
             queue.state = QueueState.FREE
             notify_next = bool(queue.entries)
+            # Stop recording and get the transcript
+            transcript = self._stop_recording(room_id)
             self._maybe_cleanup_locked(room_id)
 
         if pending_task:
             pending_task.cancel()
         if notify_next:
             await self._notify_next(room_id)
-        return True, removed_user
+        return True, removed_user, notify_room, transcript
 
     async def leave_queue(self, room_id: str, user_mxid: str) -> Tuple[bool, Optional[str]]:
         async with self._lock:
@@ -194,29 +239,35 @@ class TutoringQueueManager:
             await self._notify_next(room_id)
         return True, None
 
-    async def handle_room_leave(self, room_id: str, user_mxid: str) -> bool:
-        """Release the active slot when the attendee leaves the tutoring room."""
+    async def handle_room_leave(self, room_id: str, user_mxid: str) -> Tuple[bool, Optional[str], List[Dict[str, Any]]]:
+        """Release the active slot when the attendee leaves the tutoring room.
+        Returns (released, notify_room_id, transcript).
+        """
         async with self._lock:
             queue = self._queues.get(room_id)
             if not queue or queue.active_user != user_mxid:
-                return False
+                return False, None, []
 
             pending_task = queue.pending_task
             queue.pending_task = None
             queue.pending_user = None
+            notify_room = None
             if queue.entries and queue.entries[0].user_mxid == user_mxid:
-                queue.entries.pop(0)
+                entry = queue.entries.pop(0)
+                notify_room = entry.notify_room_id
             queue.active_user = None
             queue.teacher_ack_required = False
             queue.state = QueueState.FREE
             notify_next = bool(queue.entries)
+            # Stop recording and get the transcript
+            transcript = self._stop_recording(room_id)
             self._maybe_cleanup_locked(room_id)
 
         if pending_task:
             pending_task.cancel()
         if notify_next:
             await self._notify_next(room_id)
-        return True
+        return True, notify_room, transcript
 
     async def get_snapshot(self, room_id: str) -> Dict[str, object]:
         async with self._lock:
@@ -273,6 +324,8 @@ class TutoringQueueManager:
             student = queue.active_user
             # The active user is always at the front of the queue
             notify_room = queue.entries[0].notify_room_id if queue.entries else None
+            # Start recording the tutoring session
+            self._start_recording(room_id)
         return True, "Confirmación registrada.", student, notify_room
 
     async def _notify_next(self, room_id: str) -> None:
@@ -333,6 +386,38 @@ class TutoringQueueManager:
             await self._client.send_text(room_id, message)
         except Exception as exc:
             print(f"[WARN] No se pudo enviar mensaje de cola a {room_id}: {exc}")
+
+    async def send_transcript_file(self, room_id: str, transcript: List[Dict[str, Any]], teacher_name: str = "") -> None:
+        """Send the transcript as a JSON file attachment."""
+        if not self._client or not transcript:
+            return
+        try:
+            transcript_json = json.dumps(transcript, ensure_ascii=False, indent=2)
+            file_bytes = transcript_json.encode("utf-8")
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+            filename = f"tutoria_{teacher_name}_{timestamp}.json" if teacher_name else f"tutoria_{timestamp}.json"
+            
+            # Upload the file to Matrix
+            mxc_uri = await self._client.upload_media(
+                file_bytes,
+                mime_type="application/json",
+                filename=filename,
+            )
+            
+            # Send the file message
+            content = MediaMessageEventContent(
+                msgtype=MessageType.FILE,
+                body=filename,
+                url=mxc_uri,
+                info={"mimetype": "application/json", "size": len(file_bytes)},
+            )
+            await self._client.send_message(room_id, content)
+            await self._client.send_text(
+                room_id,
+                f"📝 Aquí tienes la transcripción de tu tutoría{' con ' + teacher_name if teacher_name else ''}.",
+            )
+        except Exception as exc:
+            print(f"[WARN] No se pudo enviar archivo de transcripción a {room_id}: {exc}")
 
     def _maybe_cleanup_locked(self, room_id: str) -> None:
         queue = self._queues.get(room_id)

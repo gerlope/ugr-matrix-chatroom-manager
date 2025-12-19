@@ -231,7 +231,7 @@ async def run(client, room_id, event, args):
             await client.send_text(
                 target_room_id,
                 (
-                    f"📣 {student_alias} ({event.sender}) solicita una tutoría.\n"
+                    f"📣 {teacher_local} - {event.sender} solicita una tutoría.\n"
                     f"Por favor, responde con `!tutoria confirmar` para enviarle la invitación."
                 ),
             )
@@ -268,7 +268,7 @@ async def run(client, room_id, event, args):
                 await client.send_text(
                     room_id,
                     (
-                        f"📨 Invitación enviada a {student_alias} para la sala {room_label}."
+                        f"📨 Invitación enviada a {student_alias}."
                         + (f"\n⚠️ No se pudo enviar la invitación automática: {invite_error}" if invite_error else "")
                     ),
                 )
@@ -303,7 +303,7 @@ async def run(client, room_id, event, args):
             await client.send_text(
                 target_room_id,
                 (
-                    f"📣 {student_alias} ({event.sender}) confirmó su turno en la cola de {room_label}.\n"
+                    f"📣 {teacher_local} - {event.sender} confirmó su turno en la cola.\n"
                     f"Por favor, responde con `!tutoria confirmar {teacher_local}` para enviarle la invitación."
                 ),
             )
@@ -321,9 +321,8 @@ async def run(client, room_id, event, args):
                     "❌ Solo el profesor o la persona atendida pueden acabar la tutoria.",
                 )
                 return
-        ok, detail = await tutoring_queue.release_current(target_room_id)
+        ok, released_mxid, student_notify_room, transcript = await tutoring_queue.release_current(target_room_id)
         if ok:
-            released_mxid = detail
             kick_note = ""
             if released_mxid:
                 try:
@@ -334,6 +333,12 @@ async def run(client, room_id, event, args):
                     )
                 except Exception as exc:
                     kick_note = f"\n⚠️ No se pudo expulsar automáticamente a {released_mxid}: {exc}"
+
+                # Send transcript to the student
+                if transcript and student_notify_room:
+                    await tutoring_queue.send_transcript_file(
+                        student_notify_room, transcript, teacher_local
+                    )
 
             released_user = _localpart(released_mxid) if released_mxid else None
             tail = (
@@ -346,7 +351,7 @@ async def run(client, room_id, event, args):
                 f"✅ Sala liberada. {tail}{kick_note}",
             )
         else:
-            await client.send_text(room_id, f"❌ {detail}")
+            await client.send_text(room_id, f"❌ {released_mxid}")
         return
 
     if action == "salir":
