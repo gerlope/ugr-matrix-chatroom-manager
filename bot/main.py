@@ -20,6 +20,7 @@ from core.event_router import register_event_handlers
 from core.db.constants import get_db_modules
 from core.runtime_state import set_bot_start_time
 from core.tutoring_queue import tutoring_queue
+from core.question_notifier import question_notifier
 
 from config import DB_TYPE
 
@@ -28,6 +29,7 @@ async def main():
     await db_conn.connect()
     client = await create_client()
     tutoring_queue.configure_client(client)
+    question_notifier.configure_client(client)
     load_commands()
     register_event_handlers(client)
 
@@ -49,10 +51,14 @@ async def main():
         set_bot_start_time()
         print("[+] Sincronización inicial completada, procesando solo eventos nuevos")
         
+        # Start the question notifier background task
+        question_notifier.start()
+        
         await client.start(filter_data=sync_filter)
     except KeyboardInterrupt:
         print("[*] Bot detenido por usuario")
     finally:
+        question_notifier.stop()
         try:
             await client.stop()
         except Exception:

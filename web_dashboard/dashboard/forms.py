@@ -30,7 +30,7 @@ class CreateQuestionForm(forms.Form):
     expected_answer = forms.CharField(max_length=500, required=False, help_text="Respuesta esperada (para preguntas de respuesta corta o numérica)")
     start_at = forms.DateTimeField(required=False, input_formats=['%Y-%m-%dT%H:%M'])
     end_at = forms.DateTimeField(required=False, input_formats=['%Y-%m-%dT%H:%M'])
-    allow_multiple_answers = forms.BooleanField(required=False, initial=False)
+    allow_multiple_selections = forms.BooleanField(required=False, initial=False)
     allow_multiple_submissions = forms.BooleanField(required=False, initial=False)
     close_on_first_correct = forms.BooleanField(required=False, initial=False, label='Cerrar tras primera correcta')
 
