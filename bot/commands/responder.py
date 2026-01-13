@@ -8,11 +8,11 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Optional
 
+from core.db.modules import DB_MODULES
 from config import DB_TYPE
 from core.db.constants import (
     COL_USER_MOODLE_ID,
     COL_USER_ID,
-    get_db_modules,
 )
 from core.moodle import fetch_user_courses, fetch_user_groups_in_course
 
@@ -36,7 +36,7 @@ def _check_numeric_answer(given: str, expected: str, tolerance: float = 0.01) ->
 
 
 async def run(client, room_id, event, args):
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     if len(args) < 2:
         await client.send_text(room_id, f"⚠️ Uso: {USAGE}")

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import List, Dict
 
+from core.db.modules import DB_MODULES
 from config import DB_TYPE
 from core.db.constants import (
     COL_ROOM_ROOM_ID,
@@ -14,7 +15,6 @@ from core.db.constants import (
     COL_ROOM_MOODLE_COURSE_ID,
     COL_USER_MOODLE_ID,
     COL_USER_IS_TEACHER,
-    get_db_modules,
 )
 from core.moodle import fetch_user_courses, fetch_course_teachers
 
@@ -27,7 +27,7 @@ def _build_matrix_link(room_id: str) -> str:
 
 
 async def run(client, room_id, event, args):
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     user_row = await db.get_user_by_matrix_id(event.sender)
     if not user_row:

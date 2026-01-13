@@ -2,11 +2,11 @@ USAGE = "!reacciones"
 DESCRIPTION = "Muestra las reacciones dadas (profesores) o recibidas (alumnos)."
 
 from core.db.constants import *
-from core.db.constants import get_db_modules
+from core.db.modules import DB_MODULES
 from config import DB_TYPE
 
 async def run(client, room_id, event, args):
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     mxid = event.sender
     user = await db.get_user_by_matrix_id(mxid)

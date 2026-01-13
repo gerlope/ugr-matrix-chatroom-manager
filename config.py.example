@@ -8,9 +8,9 @@ MATRIX_ADMIN_TOKEN = "TU_ADMIN_TOKEN"      # Token de admin Synapse (para crear 
 DJANGO_SECRET_KEY = "TU_SECRET_KEY"        # Generar con "python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'"
 
 DB_TYPE = "postgres"  # Solo soporta "postgres" pero es útil para potenciales expansiones
-                      # Para añaidir más tipos de BD, añadir a DB_MODULES en core/db/constants.py
+                      # Para añaidir más tipos de BD, añadir a DB_MODULES en bot/core/db/modules.py
                       # y replicar los archivos de la carpeta postgres con el nuevo tipo
-                      # El script de setup.py y el engine de bot_db en web_dashboard/settings.py hay que cambiarlas por separado
+                      # El script de setup.py y el engine de bot_db en web_dashboard/web_dashboard/settings.py hay que cambiarlas por separado
                       
 DB_USER = "tu_usuario"
 DB_PASSWORD = "tu_password"

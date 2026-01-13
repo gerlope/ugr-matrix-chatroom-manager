@@ -8,6 +8,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Dict, List, Set
 
+from core.db.modules import DB_MODULES
 from config import DB_TYPE
 from core.db.constants import (
     COL_QUESTION_ID,
@@ -20,7 +21,6 @@ from core.db.constants import (
     COL_QUESTION_CLOSE_ON_FIRST_CORRECT,
     COL_QUESTION_ALLOW_LATE,
     COL_USER_MOODLE_ID,
-    get_db_modules,
 )
 from core.moodle import fetch_user_courses, fetch_user_groups_in_course
 
@@ -39,7 +39,7 @@ QTYPE_LABELS = {
 
 
 async def run(client, room_id, event, args):
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     # Get user info
     user_row = await db.get_user_by_matrix_id(event.sender)

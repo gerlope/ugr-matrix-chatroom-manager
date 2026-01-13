@@ -1,4 +1,4 @@
-# bot.py
+# main.py
 
 import asyncio
 from pathlib import Path
@@ -17,7 +17,7 @@ sys.modules["config"] = _config
 from core.client_manager import create_client
 from core.command_registry import load_commands
 from core.event_router import register_event_handlers
-from core.db.constants import get_db_modules
+from core.db.modules import DB_MODULES
 from core.runtime_state import set_bot_start_time
 from core.tutoring_queue import tutoring_queue
 from core.question_notifier import question_notifier
@@ -25,7 +25,7 @@ from core.question_notifier import question_notifier
 from config import DB_TYPE
 
 async def main():
-    db_conn = get_db_modules()[DB_TYPE]["conn"]
+    db_conn = DB_MODULES[DB_TYPE]["conn"]
     await db_conn.connect()
     client = await create_client()
     tutoring_queue.configure_client(client)

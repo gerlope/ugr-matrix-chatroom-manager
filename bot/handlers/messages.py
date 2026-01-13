@@ -1,6 +1,7 @@
 # handlers/messages.py
 
 from mautrix.types import EventType, MessageType
+from config import COMMAND_PREFIX
 from core.command_registry import execute_command
 from core.runtime_state import should_process_event
 from core.tutoring_queue import tutoring_queue
@@ -32,6 +33,7 @@ def register(client):
             tutoring_queue.record_message(event.room_id, event.sender, body)
         
         print(f"[Mensaje] {event.sender}: {body}")
-        await execute_command(client, event.room_id, event, body)
+        if body.startswith(COMMAND_PREFIX):
+            await execute_command(client, event.room_id, event, body)
     
     client.add_event_handler(EventType.ROOM_MESSAGE, on_message)

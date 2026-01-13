@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+from core.db.modules import DB_MODULES
 from config import DB_TYPE
 from core.db.constants import (
     COL_USER_ID,
@@ -29,7 +30,6 @@ from core.db.constants import (
     COL_RESPONSE_FEEDBACK,
     COL_RESPONSE_VERSION,
     COL_RESPONSE_LATE,
-    get_db_modules,
 )
 
 USAGE = "!respuestas <id_pregunta>"
@@ -67,7 +67,7 @@ def _is_question_active(question: dict) -> bool:
 
 
 async def run(client, room_id, event, args):
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     if len(args) < 1:
         await client.send_text(room_id, f"⚠️ Uso: {USAGE}")

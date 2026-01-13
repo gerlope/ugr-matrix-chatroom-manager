@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Tuple
 
+from core.db.modules import DB_MODULES
 from config import DB_TYPE, SERVER_NAME
 from core.db.constants import (
     COL_ROOM_ROOM_ID,
     COL_ROOM_SHORTCODE,
     COL_USER_ID,
     COL_USER_IS_TEACHER,
-    get_db_modules,
 )
 from core.tutoring_queue import tutoring_queue
 
@@ -146,7 +146,7 @@ async def run(client, room_id, event, args):
         await client.send_text(room_id, f"⚠️ Uso: {USAGE}")
         return
 
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     action = args[0].lower()
     implicit_teacher = False

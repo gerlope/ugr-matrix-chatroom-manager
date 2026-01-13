@@ -3,13 +3,13 @@ from __future__ import annotations
 from datetime import datetime, time
 from typing import Dict, List, Optional, Tuple
 
+from core.db.modules import DB_MODULES
 from config import DB_TYPE
 from core.db.constants import (
     COL_ROOM_SHORTCODE,
     COL_USER_ID,
     COL_USER_MATRIX_ID,
     COL_USER_MOODLE_ID,
-    get_db_modules,
 )
 from core.moodle import fetch_course_teachers, fetch_user_courses
 
@@ -83,7 +83,7 @@ def _format_availability_windows(windows: List[Dict[str, object]]) -> str:
 
 
 async def run(client, room_id, event, args):
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     user_row = await db.get_user_by_matrix_id(event.sender)
     if not user_row:

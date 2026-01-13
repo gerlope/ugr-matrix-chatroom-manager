@@ -4,12 +4,12 @@ import asyncio
 from typing import Any, Optional
 import requests
 
+from core.db.modules import DB_MODULES
 from config import MOODLE_URL, MOODLE_TOKEN, DB_TYPE
 from core.db.constants import (
     COL_USER_MOODLE_ID,
     COL_ROOM_MOODLE_COURSE_ID,
     COL_ROOM_MOODLE_GROUP,
-    get_db_modules,
 )
 from mautrix.types import EventType, Membership
 from core.runtime_state import should_process_event
@@ -130,7 +130,7 @@ async def _resolve_group_identifier(course_id: int, stored_value: str) -> tuple[
 
 
 async def _evaluate_knock_request(user_mxid: str, room_id: str) -> tuple[bool, Optional[str]]:
-    db_queries = get_db_modules()[DB_TYPE]["queries"]
+    db_queries = DB_MODULES[DB_TYPE]["queries"]
 
     user_row = await db_queries.get_user_by_matrix_id(user_mxid)
     if not user_row:
@@ -248,7 +248,7 @@ def register(client):
         elif membership == Membership.LEAVE:
                 # Verifica si la sala es de tutoría para liberar la cola
             try:
-                db_queries = get_db_modules()[DB_TYPE]["queries"]
+                db_queries = DB_MODULES[DB_TYPE]["queries"]
                 room_row = await db_queries.get_room_by_matrix_id(room_id)
             except Exception:
                 room_row = None

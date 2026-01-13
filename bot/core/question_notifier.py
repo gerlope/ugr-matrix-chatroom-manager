@@ -6,12 +6,9 @@ Background task that monitors questions for activation and sends room notificati
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Dict, Optional, Set
-
-from mautrix.types import TextMessageEventContent, MessageType, Format
-
-from core.db.constants import get_db_modules
+from datetime import datetime
+from typing import  Optional, Set
+from core.db.modules import DB_MODULES
 from config import DB_TYPE
 
 
@@ -65,7 +62,7 @@ class QuestionNotifier:
         if not self._client:
             return
 
-        db_queries = get_db_modules()[DB_TYPE]["queries"]
+        db_queries = DB_MODULES[DB_TYPE]["queries"]
         active_questions = await db_queries.get_all_currently_active_questions()
         
         for q in active_questions:
@@ -89,7 +86,7 @@ class QuestionNotifier:
         if not self._client:
             return
 
-        db_queries = get_db_modules()[DB_TYPE]["queries"]
+        db_queries = DB_MODULES[DB_TYPE]["queries"]
         
         # Get all currently active questions across all rooms
         active_questions = await db_queries.get_all_currently_active_questions()

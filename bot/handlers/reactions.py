@@ -4,7 +4,7 @@ from mautrix.types import EventType
 from mautrix.errors.request import MNotFound
 import logging
 from core.db.constants import COL_ROOM_ID, COL_USER_IS_TEACHER
-from core.db.constants import get_db_modules
+from core.db.modules import DB_MODULES
 from core.runtime_state import should_process_event
 from config import DB_TYPE
 
@@ -25,7 +25,7 @@ def register(client):
         sender_mxid = event.sender
         room_id = event.room_id
 
-        db = get_db_modules()[DB_TYPE]["queries"]
+        db = DB_MODULES[DB_TYPE]["queries"]
 
         # Verificar profesor
         teacher = await db.get_user_by_matrix_id(sender_mxid)
@@ -83,7 +83,7 @@ async def redact_reaction(event, client):
     sender_mxid = event.sender
     room_id = event.room_id
 
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     if sender_mxid == client.mxid:
         return

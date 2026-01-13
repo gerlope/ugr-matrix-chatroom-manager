@@ -4,7 +4,7 @@ import importlib
 import pkgutil
 import commands
 from config import COMMAND_PREFIX, DB_TYPE
-from core.db.constants import get_db_modules
+from core.db.modules import DB_MODULES
 
 COMMANDS = {}
 
@@ -33,9 +33,6 @@ def load_commands():
     print(f"[+] {len(COMMANDS)} comandos cargados: {list(COMMANDS.keys())}")
 
 async def execute_command(client, room_id, event, body):
-    if not body.startswith(COMMAND_PREFIX):
-        return
-
     parts = body[len(COMMAND_PREFIX):].strip().split()
     if not parts:
         await client.send_text(room_id, "⚠️ No has introducido ningún comando.")
@@ -47,7 +44,7 @@ async def execute_command(client, room_id, event, body):
     # ────────────────────────────────────────────────────────────────────────────────
     # Room-type check: only allow commands in DM rooms or tutoring rooms.
     # ────────────────────────────────────────────────────────────────────────────────
-    db = get_db_modules()[DB_TYPE]["queries"]
+    db = DB_MODULES[DB_TYPE]["queries"]
 
     # Check if this is a tutoring room (no course, but teacher room in DB)
     is_tutoring = await db.is_tutoring_room(room_id)
