@@ -48,16 +48,16 @@
             <thead>
               <tr class="text-left border-b">
                 <th class="py-1 px-2">Emoji</th>
-                <th class="py-1 px-2">Conteo</th>
-                <th class="py-1 px-2">Última actualización</th>
+                <th class="py-1 px-2">Mensaje</th>
+                <th class="py-1 px-2">Fecha</th>
               </tr>
             </thead>
             <tbody>
               {% for reaction in student.reactions %}
               <tr class="hover:bg-gray-100">
                 <td class="py-1 px-2">{{ reaction.emoji }}</td>
-                <td class="py-1 px-2">{{ reaction.total_count }}</td>
-                <td class="py-1 px-2">{{ reaction.latest_update|date:"Y-m-d H:i" }}</td>
+                <td class="py-1 px-2">{{ reaction.message|default:"-" }}</td>
+                <td class="py-1 px-2">{{ reaction.date|date:"Y-m-d H:i" }}</td>
               </tr>
               {% endfor %}
             </tbody>

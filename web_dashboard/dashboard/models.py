@@ -57,19 +57,17 @@ class Reaction(models.Model):
     teacher_id = models.IntegerField()
     student_id = models.IntegerField()
     room_id = models.IntegerField()
+    event_id = models.TextField(unique=True)
     emoji = models.TextField()
-    count = models.IntegerField(default=1)
-    last_updated = models.DateTimeField(auto_now=True)
+    message = models.TextField()
+    date = models.DateTimeField()
 
     class Meta:
         managed = False
         db_table = 'reactions'
-        constraints = [
-            models.UniqueConstraint(fields=['teacher_id', 'student_id', 'emoji'], name='unique_reaction')
-        ]
 
     def __str__(self):
-        return f"{self.emoji} x{self.count} (teacher={self.teacher_id}, student={self.student_id})"
+        return f"{self.emoji} (event={self.event_id}, teacher={self.teacher_id}, student={self.student_id})"
 
 
 class Question(models.Model):

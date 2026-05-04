@@ -36,7 +36,12 @@ async def run(client, room_id, event, args):
                         texto += "\n"
                     last_student = r[JOINED_REACTION_STUDENT_MATRIX_ID]
                     texto += f"    👤 Alumno: {r[JOINED_REACTION_STUDENT_MATRIX_ID]} (Moodle ID: {r[JOINED_REACTION_STUDENT_MOODLE_ID]})\n"
-                texto += f"        • {r[COL_REACTION_EMOJI]} - {r[COL_REACTION_COUNT]}\n"
+                reaction_date = r.get(COL_REACTION_DATE)
+                date_text = reaction_date.strftime("%Y-%m-%d %H:%M:%S") if hasattr(reaction_date, "strftime") else str(reaction_date)
+                message_text = (r.get(COL_REACTION_MESSAGE) or "").strip()
+                texto += f"        • {r[COL_REACTION_EMOJI]} | {date_text}\n"
+                if message_text:
+                    texto += f"          {message_text}\n"
     else:
         reactions = await db.get_reacciones_por_estudiante(mxid)
         if not reactions:
@@ -57,6 +62,11 @@ async def run(client, room_id, event, args):
                         texto += "\n"
                     last_teacher = r[JOINED_REACTION_TEACHER_MATRIX_ID]
                     texto += f"    👤 Profesor: {r[JOINED_REACTION_TEACHER_MATRIX_ID]}\n"
-                texto += f"        • {r[COL_REACTION_EMOJI]} - {r[COL_REACTION_COUNT]}\n"
+                reaction_date = r.get(COL_REACTION_DATE)
+                date_text = reaction_date.strftime("%Y-%m-%d %H:%M:%S") if hasattr(reaction_date, "strftime") else str(reaction_date)
+                message_text = (r.get(COL_REACTION_MESSAGE) or "").strip()
+                texto += f"        • {r[COL_REACTION_EMOJI]} | {date_text}\n"
+                if message_text:
+                    texto += f"          {message_text}\n"
 
     await client.send_text(room_id, texto)

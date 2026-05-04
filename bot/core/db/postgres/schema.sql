@@ -45,16 +45,17 @@ CREATE TABLE IF NOT EXISTS reactions (
     teacher_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     student_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     room_id INTEGER NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
+    event_id TEXT UNIQUE NOT NULL,
     emoji TEXT NOT NULL,                   -- reaction emoji ("👍", etc.)
-    count INTEGER DEFAULT 1 CHECK (count >= 1),
-    last_updated TIMESTAMP DEFAULT NOW(),
-    UNIQUE (teacher_id, student_id, room_id, emoji)
+    message TEXT NOT NULL,
+    date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 -- 🔹 Indexes for faster joins and lookups
 CREATE INDEX IF NOT EXISTS idx_reactions_teacher_id ON reactions(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_reactions_student_id ON reactions(student_id);
 CREATE INDEX IF NOT EXISTS idx_reactions_room_id ON reactions(room_id);
+CREATE INDEX IF NOT EXISTS idx_reactions_event_id ON reactions(event_id);
 
 DO $$
 BEGIN

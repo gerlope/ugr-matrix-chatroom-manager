@@ -138,7 +138,8 @@ async def get_reacciones_por_profesor(teacher_matrix_id: str):
     """Obtiene todas las reacciones puestas por un profesor (usando su matrix_id)."""
     async with conn_module.pool.acquire() as conn:
         query = f"""
-            SELECT r.{COL_REACTION_EMOJI}, r.{COL_REACTION_COUNT}, r.{COL_REACTION_ROOM_ID},
+            SELECT r.{COL_REACTION_ID}, r.{COL_REACTION_EVENT_ID}, r.{COL_REACTION_EMOJI},
+                   r.{COL_REACTION_MESSAGE}, r.{COL_REACTION_DATE}, r.{COL_REACTION_ROOM_ID},
                    s.{COL_USER_MOODLE_ID} AS {JOINED_REACTION_STUDENT_MOODLE_ID}, 
                    s.{COL_USER_MATRIX_ID} as {JOINED_REACTION_STUDENT_MATRIX_ID},
                    room.{COL_ROOM_SHORTCODE} AS {JOINED_REACTION_ROOM_SHORTCODE},
@@ -148,7 +149,7 @@ async def get_reacciones_por_profesor(teacher_matrix_id: str):
             JOIN {TABLE_USERS} s ON r.{COL_REACTION_STUDENT_ID} = s.{COL_USER_ID}
             JOIN {TABLE_ROOMS} room ON r.{COL_REACTION_ROOM_ID} = room.{COL_ROOM_ID}
             WHERE t.{COL_USER_MATRIX_ID} = $1
-            ORDER BY r.{COL_REACTION_ROOM_ID}, s.{COL_USER_MOODLE_ID};
+            ORDER BY r.{COL_REACTION_ROOM_ID}, s.{COL_USER_MOODLE_ID}, r.{COL_REACTION_DATE};
         """
         rows = await conn.fetch(query, teacher_matrix_id)
     return [dict(row) for row in rows]
@@ -159,7 +160,8 @@ async def get_reacciones_por_estudiante(student_matrix_id: str):
     """Obtiene todas las reacciones recibidas por un estudiante (usando su matrix_id)."""
     async with conn_module.pool.acquire() as conn:
         query = f"""
-            SELECT r.{COL_REACTION_EMOJI}, r.{COL_REACTION_COUNT}, r.{COL_REACTION_ROOM_ID},
+            SELECT r.{COL_REACTION_ID}, r.{COL_REACTION_EVENT_ID}, r.{COL_REACTION_EMOJI},
+                   r.{COL_REACTION_MESSAGE}, r.{COL_REACTION_DATE}, r.{COL_REACTION_ROOM_ID},
                    t.{COL_USER_MOODLE_ID} AS {JOINED_REACTION_TEACHER_MOODLE_ID},
                    t.{COL_USER_MATRIX_ID} AS {JOINED_REACTION_TEACHER_MATRIX_ID},
                    room.{COL_ROOM_SHORTCODE} AS {JOINED_REACTION_ROOM_SHORTCODE},
@@ -169,22 +171,24 @@ async def get_reacciones_por_estudiante(student_matrix_id: str):
             JOIN {TABLE_USERS} t ON r.{COL_REACTION_TEACHER_ID} = t.{COL_USER_ID}
             JOIN {TABLE_ROOMS} room ON r.{COL_REACTION_ROOM_ID} = room.{COL_ROOM_ID}
             WHERE s.{COL_USER_MATRIX_ID} = $1
-            ORDER BY r.{COL_REACTION_ROOM_ID}, t.{COL_USER_MOODLE_ID};
+            ORDER BY r.{COL_REACTION_ROOM_ID}, t.{COL_USER_MOODLE_ID}, r.{COL_REACTION_DATE};
         """
         rows = await conn.fetch(query, student_matrix_id)
     return [dict(row) for row in rows]
 
 
 @db_safe(default=False)
-async def add_or_increase_reaccion(
+async def add_reaccion(
     teacher_id: int, 
     student_id: int, 
-    room_id: str, 
-    reaction_type: str, 
-    increment: int = 1
+    room_id: int,
+    event_id: str,
+    reaction_type: str,
+    message: str,
+    reaction_date
 ):
     """
-    Añade una reación a la tabla o incrementa su contador si ya existe.
+    Añade una reacción individual a la tabla.
     """
     async with conn_module.pool.acquire() as conn:
         await conn.execute(f"""
@@ -192,50 +196,35 @@ async def add_or_increase_reaccion(
                 ({COL_REACTION_TEACHER_ID}, 
                  {COL_REACTION_STUDENT_ID}, 
                  {COL_REACTION_ROOM_ID}, 
+                 {COL_REACTION_EVENT_ID},
                  {COL_REACTION_EMOJI}, 
-                 {COL_REACTION_COUNT})
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT ({COL_REACTION_TEACHER_ID}, 
-                         {COL_REACTION_STUDENT_ID}, 
-                         {COL_REACTION_ROOM_ID}, 
-                         {COL_REACTION_EMOJI})
+                 {COL_REACTION_MESSAGE},
+                 {COL_REACTION_DATE})
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            ON CONFLICT ({COL_REACTION_EVENT_ID})
             DO UPDATE SET
-                {COL_REACTION_COUNT} = {TABLE_REACTIONS}.{COL_REACTION_COUNT} + EXCLUDED.{COL_REACTION_COUNT},
-                {COL_REACTION_LAST_UPDATED} = NOW();
-        """, teacher_id, student_id, room_id, reaction_type, increment)
+                {COL_REACTION_TEACHER_ID} = EXCLUDED.{COL_REACTION_TEACHER_ID},
+                {COL_REACTION_STUDENT_ID} = EXCLUDED.{COL_REACTION_STUDENT_ID},
+                {COL_REACTION_ROOM_ID} = EXCLUDED.{COL_REACTION_ROOM_ID},
+                {COL_REACTION_EMOJI} = EXCLUDED.{COL_REACTION_EMOJI},
+                {COL_REACTION_MESSAGE} = EXCLUDED.{COL_REACTION_MESSAGE},
+                {COL_REACTION_DATE} = EXCLUDED.{COL_REACTION_DATE};
+        """, teacher_id, student_id, room_id, event_id, reaction_type, message, reaction_date)
     return True
 
 
 @db_safe(default=False)
-async def decrease_or_delete_reaccion(
-    teacher_id: int,
-    student_id: int,
-    room_id: str,
-    reaction_type: str,
-    decrement: int = 1
+async def delete_reaccion(
+    event_id: str,
 ):
     """
-    Disminuye el contador de una reacción. 
-    Si el contador actual es menor o igual al decremento, elimina la reacción.
+    Elimina una reacción individual por su event_id.
     """
     async with conn_module.pool.acquire() as conn:
         await conn.execute(f"""
             DELETE FROM {TABLE_REACTIONS}
-            WHERE {COL_REACTION_TEACHER_ID} = $1
-              AND {COL_REACTION_STUDENT_ID} = $2
-              AND {COL_REACTION_ROOM_ID} = $3
-              AND {COL_REACTION_EMOJI} = $4
-              AND {COL_REACTION_COUNT} <= $5;
-
-            UPDATE {TABLE_REACTIONS}
-            SET {COL_REACTION_COUNT} = {COL_REACTION_COUNT} - $5,
-                {COL_REACTION_LAST_UPDATED} = NOW()
-            WHERE {COL_REACTION_TEACHER_ID} = $1
-              AND {COL_REACTION_STUDENT_ID} = $2
-              AND {COL_REACTION_ROOM_ID} = $3
-              AND {COL_REACTION_EMOJI} = $4
-              AND {COL_REACTION_COUNT} > $5;
-        """, teacher_id, student_id, room_id, reaction_type, decrement)
+            WHERE {COL_REACTION_EVENT_ID} = $1;
+        """, event_id)
     return True
 
 

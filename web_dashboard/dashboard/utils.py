@@ -21,7 +21,6 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 import requests
 import logging
-from django.db.models import Max, Sum
 from django.utils import timezone
 import datetime
 from asgiref.sync import async_to_sync
@@ -897,10 +896,9 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
         if selected_room.teacher_id is None and selected_room.shortcode == course.get('shortname'):
             # General room: aggregate reactions and students from all course rooms
             selected_reactions = (Reaction.objects.using('bot_db').filter(teacher_id=teacher['id'],
-                                                                              room_id__in=[room.id for room in course_rooms + ([general_room] if general_room else [])])
-                                                                      .values('student_id', 'emoji')
-                                                                      .annotate(total_count=Sum('count'), 
-                                                                                latest_update=Max('last_updated')))                
+                                              room_id__in=[room.id for room in course_rooms + ([general_room] if general_room else [])])
+                                          .values('id', 'student_id', 'room_id', 'event_id', 'emoji', 'message', 'date')
+                                          .order_by('-date'))
 
             selected_students = []
             student_moodle_ids = [s['id'] for s in enrolled_data if s.get('roles') and any(r['shortname'] == 'student' for r in s['roles'])]
@@ -912,10 +910,9 @@ def process_course_data(course, general_rooms, teacher_rooms, teacher, selected_
         elif selected_room.teacher_id == teacher['id']:
             # Specific teacher room: get reactions and students for this room only
             selected_reactions = (Reaction.objects.using('bot_db').filter(teacher_id=teacher['id'], 
-                                                                              room_id=selected_room_id)
-                                                                      .values('student_id', 'emoji')
-                                                                      .annotate(total_count=Sum('count'), 
-                                                                                latest_update=Max('last_updated')))
+                                              room_id=selected_room.id)
+                                          .values('id', 'student_id', 'room_id', 'event_id', 'emoji', 'message', 'date')
+                                          .order_by('-date'))
             
             selected_students = []
             

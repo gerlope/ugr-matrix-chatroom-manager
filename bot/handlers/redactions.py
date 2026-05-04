@@ -15,7 +15,7 @@ def register(client):
         sender_mxid = event.sender
         room_id = event.room_id
 
-        # You may want to ignore bot's own redactions
+        # Ignore bot's own redactions
         if sender_mxid == client.mxid:
             return
         
@@ -29,6 +29,6 @@ def register(client):
             return  # Event might not exist anymore
 
         if redacted_event and redacted_event.type == EventType.REACTION:
-            await redact_reaction(redacted_event, client)
+            await redact_reaction(redacted_event)
     
     client.add_event_handler(EventType.ROOM_REDACTION, handle_redaction)
