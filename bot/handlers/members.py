@@ -1,56 +1,25 @@
 # handlers/members.py
 
-import asyncio
-from typing import Any, Optional
-import requests
+from typing import Optional
 
 from core.db.modules import DB_MODULES
-from config import MOODLE_URL, MOODLE_TOKEN, DB_TYPE
+from config import DB_TYPE
 from core.db.constants import (
     COL_USER_MOODLE_ID,
     COL_ROOM_MOODLE_COURSE_ID,
     COL_ROOM_MOODLE_GROUP,
 )
+from core.moodle import fetch_course_groups, fetch_course_participants, fetch_group_members
 from mautrix.types import EventType, Membership
 from core.runtime_state import should_process_event
 from core.tutoring_queue import tutoring_queue
 
-
-MOODLE_TIMEOUT = 20
-MOODLE_ENDPOINT = f"{MOODLE_URL.rstrip('/')}/webservice/rest/server.php"
-
-
-def _payload_has_error(payload):
-    return isinstance(payload, dict) and payload.get("exception")
-
-
-async def _moodle_request(params, context: str) -> Optional[Any]:
-    loop = asyncio.get_running_loop()
-
-    def _do_request():
-        response = requests.get(MOODLE_ENDPOINT, params=params, timeout=MOODLE_TIMEOUT)
-        response.raise_for_status()
-        return response.json() or []
-
-    try:
-        return await loop.run_in_executor(None, _do_request)
-    except Exception as exc:
-        print(f"[WARN] Error consultando Moodle ({context}): {exc}")
-        return None
-
-
 async def _is_user_enrolled_in_course(course_id: int, moodle_user_id: int) -> Optional[bool]:
-    params = {
-        "wstoken": MOODLE_TOKEN,
-        "wsfunction": "core_enrol_get_enrolled_users",
-        "moodlewsrestformat": "json",
-        "courseid": course_id,
-    }
-    payload = await _moodle_request(params, "enrol_get_enrolled_users")
-    if payload is None or _payload_has_error(payload):
-        return None
     try:
-        for entry in payload:
+        participants = await fetch_course_participants(course_id)
+        if participants is None:
+            return None
+        for entry in participants:
             if not isinstance(entry, dict):
                 continue
             try:
@@ -65,24 +34,16 @@ async def _is_user_enrolled_in_course(course_id: int, moodle_user_id: int) -> Op
 
 
 async def _is_user_in_group(group_id: int, moodle_user_id: int) -> Optional[bool]:
-    params = {
-        "wstoken": MOODLE_TOKEN,
-        "wsfunction": "core_group_get_group_members",
-        "moodlewsrestformat": "json",
-        "groupids[0]": group_id,
-    }
-    payload = await _moodle_request(params, "group_get_group_members")
-    if payload is None or _payload_has_error(payload):
-        return None
     try:
-        groups = payload if isinstance(payload, list) else []
+        groups = await fetch_group_members(group_id)
+        if groups is None:
+            return None
         for group in groups:
             if not isinstance(group, dict):
                 continue
-            members = group.get("userids") or []
-            for member in members:
+            for member_id in group.get("userids") or []:
                 try:
-                    if int(member) == moodle_user_id:
+                    if int(member_id) == moodle_user_id:
                         return True
                 except (TypeError, ValueError):
                     continue
@@ -101,14 +62,8 @@ async def _resolve_group_identifier(course_id: int, stored_value: str) -> tuple[
     except (TypeError, ValueError):
         pass
 
-    params = {
-        "wstoken": MOODLE_TOKEN,
-        "wsfunction": "core_group_get_course_groups",
-        "moodlewsrestformat": "json",
-        "courseid": course_id,
-    }
-    payload = await _moodle_request(params, "group_get_course_groups")
-    if payload is None or _payload_has_error(payload):
+    payload = await fetch_course_groups(course_id)
+    if payload is None:
         return None, "no se pudieron obtener los grupos del curso"
 
     target = stored_value.strip().casefold()
@@ -213,8 +168,7 @@ def register(client):
             return
 
         # Procesa solicitudes de acceso (knock)
-        knock_value = getattr(Membership, "KNOCK", "knock")
-        if membership == knock_value:
+        if membership == Membership.KNOCK:
             allowed, denial_reason = await _evaluate_knock_request(event.state_key, room_id)
             if allowed:
                 try:

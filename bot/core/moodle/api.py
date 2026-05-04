@@ -50,7 +50,7 @@ async def fetch_user_courses(moodle_user_id: int) -> List[Dict[str, Any]]:
     return payload if isinstance(payload, list) else []
 
 
-async def fetch_course_participants(course_id: int) -> List[Dict[str, Any]]:
+async def fetch_course_participants(course_id: int) -> Optional[List[Dict[str, Any]]]:
     params = {
         "wstoken": MOODLE_TOKEN,
         "wsfunction": "core_enrol_get_enrolled_users",
@@ -58,11 +58,37 @@ async def fetch_course_participants(course_id: int) -> List[Dict[str, Any]]:
         "courseid": course_id,
     }
     payload = await _moodle_request(params, "core_enrol_get_enrolled_users")
-    return payload if isinstance(payload, list) else []
+    return payload if isinstance(payload, list) else None
+
+
+async def fetch_course_groups(course_id: int) -> Optional[List[Dict[str, Any]]]:
+    params = {
+        "wstoken": MOODLE_TOKEN,
+        "wsfunction": "core_group_get_course_groups",
+        "moodlewsrestformat": "json",
+        "courseid": course_id,
+    }
+    payload = await _moodle_request(params, "core_group_get_course_groups")
+    return payload if isinstance(payload, list) else None
+
+
+async def fetch_group_members(group_id: int) -> Optional[List[Dict[str, Any]]]:
+    params = {
+        "wstoken": MOODLE_TOKEN,
+        "wsfunction": "core_group_get_group_members",
+        "moodlewsrestformat": "json",
+        "groupids[0]": group_id,
+    }
+    payload = await _moodle_request(params, "core_group_get_group_members")
+    if not isinstance(payload, list):
+        return None
+    return payload
 
 
 async def fetch_course_teachers(course_id: int) -> List[Dict[str, Any]]:
     participants = await fetch_course_participants(course_id)
+    if not participants:
+        return []
     return [p for p in participants if _is_teacher(p)]
 
 
