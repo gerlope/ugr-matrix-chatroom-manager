@@ -110,3 +110,14 @@ class AvailabilityViewTests(TestCase):
         shortnames = {c['shortname'] for c in courses}
         self.assertIn('COURSE1', shortnames)
         self.assertIn('COURSE2', shortnames)
+
+    def test_dashboard_room_route_renders(self):
+        resp = self.client.get(reverse('dashboard:dashboard_room', args=[1]))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context.get('selected_page'), 'dashboard')
+
+    def test_tutoring_schedule_view_renders(self):
+        with patch_teacher_availability([]):
+            resp = self.client.get(reverse('dashboard:tutoring_schedule'))
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.context.get('selected_page'), 'schedule')

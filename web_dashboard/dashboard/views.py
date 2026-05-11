@@ -549,13 +549,16 @@ def create_question(request):
                 'show_create_question_modal': 'true',
             })
     try:
+        expected_answer = form.cleaned_data.get('expected_answer') if qtype in ('short_answer', 'numeric') else None
+        if expected_answer == '':
+            expected_answer = None
         q = Question.objects.using('bot_db').create(
             teacher_id=teacher['id'],
             room_id=room.id,
             title=form.cleaned_data.get('title') or None,
             body=form.cleaned_data['body'],
             qtype=qtype,
-            expected_answer = form.cleaned_data.get('expected_answer') if qtype in ('short_answer', 'numeric') else None,
+            expected_answer=expected_answer,
             start_at=form.cleaned_data.get('start_at'),
             end_at=form.cleaned_data.get('end_at'),
             manual_active=False,
@@ -578,13 +581,17 @@ def create_question(request):
                     position=idx
                 )
         elif qtype == 'multiple_choice':
+            # The allow_multiple_selections flag determines which UI input to use
+            allow_multiple = form.cleaned_data.get('allow_multiple_selections', False)
             single_choice = request.POST.get('option_correct_single')
             for idx, opt_text in enumerate(options):
-                if single_choice is not None and single_choice != '':
-                    is_correct = (str(idx) == str(single_choice))
-                else:
+                if allow_multiple:
+                    # Multi-selection mode: use checkbox selections, ignore radio button
                     correct_flag = request.POST.get(f'option_correct_{idx}')
                     is_correct = bool(correct_flag)
+                else:
+                    # Single-selection mode: use radio button, ignore checkboxes
+                    is_correct = (str(idx) == str(single_choice)) if single_choice is not None and single_choice != '' else False
                 QuestionOption.objects.using('bot_db').create(
                     question_id=q.id,
                     option_key=chr(65 + (idx % 26)),

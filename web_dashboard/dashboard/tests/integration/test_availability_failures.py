@@ -16,9 +16,6 @@ from django.db import IntegrityError
 from dashboard.tests.helpers.mocks import dashboard_test_stack, patch_teacher_availability, DummyAvail
 
 
-# reuse DummyAvail from helpers.mocks
-
-
 class RoomAvailabilityFailureTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(username='ratester', password='x')
@@ -174,6 +171,21 @@ class RoomAvailabilityFailureTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(any('Error al actualizar el intervalo' in str(m) for m in resp.context['messages']))
 
+    def test_edit_availability_success(self):
+        a = DummyAvail(7, teacher_id=42, day_of_week='Monday', start_time=datetime.time(8,0), end_time=datetime.time(9,0))
+        with mock.patch('dashboard.views.TeacherAvailability') as TA, \
+             mock.patch('dashboard.views.check_availability_overlap', return_value=None):
+            TA.objects.using.return_value.filter.return_value.first.return_value = a
+            resp = self.client.post(reverse('dashboard:edit_availability'), {
+                'avail_id': '7',
+                'start_time': '08:30',
+                'end_time': '09:30',
+            }, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(any('Intervalo actualizado correctamente.' in str(m) for m in resp.context['messages']))
+        self.assertEqual(a.start_time, datetime.time(8, 30))
+        self.assertEqual(a.end_time, datetime.time(9, 30))
+
     def test_delete_availability_invalid_id(self):
         resp = self.client.post(reverse('dashboard:delete_availability'), {'avail_id': 'bad'}, follow=True)
         self.assertEqual(resp.status_code, 200)
@@ -202,3 +214,13 @@ class RoomAvailabilityFailureTests(TestCase):
             resp = self.client.post(reverse('dashboard:delete_availability'), {'avail_id': '6'}, follow=True)
         self.assertEqual(resp.status_code, 200)
         self.assertTrue(any('Error al eliminar la disponibilidad' in str(m) for m in resp.context['messages']))
+
+    def test_delete_availability_success(self):
+        a = mock.MagicMock()
+        a.teacher_id = 42
+        with mock.patch('dashboard.views.TeacherAvailability') as TA:
+            TA.objects.using.return_value.filter.return_value.first.return_value = a
+            resp = self.client.post(reverse('dashboard:delete_availability'), {'avail_id': '7'}, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(any('Intervalo eliminado correctamente.' in str(m) for m in resp.context['messages']))
+        a.delete.assert_called_with(using='bot_db')

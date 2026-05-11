@@ -35,6 +35,14 @@ class CreateQuestionForm(forms.Form):
     close_on_first_correct = forms.BooleanField(required=False, initial=False, label='Cerrar tras primera correcta')
     allow_late = forms.BooleanField(required=False, initial=False, label='Permitir entregas tardías')
 
+    def clean(self):
+        cleaned = super().clean()
+        start_at = cleaned.get('start_at')
+        end_at = cleaned.get('end_at')
+        if start_at and end_at and end_at <= start_at:
+            raise forms.ValidationError('La fecha de fin debe ser posterior a la fecha de inicio.')
+        return cleaned
+
 
 class CreateAvailabilityForm(forms.Form):
     WEEKDAY_CHOICES = [

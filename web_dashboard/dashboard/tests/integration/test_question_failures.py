@@ -106,6 +106,27 @@ class QuestionFailureTests(TestCase):
         form = resp.context['create_question_form']
         self.assertTrue(form.non_field_errors())
 
+    def test_create_question_invalid_date_range(self):
+        fake_room = mock.MagicMock()
+        fake_room.teacher_id = 42
+        fake_room.id = 10
+        with mock.patch('dashboard.views.Room') as R:
+            R.objects.using.return_value.filter.return_value.first.return_value = fake_room
+            resp = self.client.post(reverse('dashboard:create_question'), {
+                'selected_room_id': '10',
+                'qtype': 'short_answer',
+                'title': 'Invalid dates',
+                'body': 'Body',
+                'start_at': '2026-05-11T12:00',
+                'end_at': '2026-05-11T11:00',
+            })
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('create_question_form', resp.context)
+        form = resp.context['create_question_form']
+        self.assertTrue(form.non_field_errors())
+        self.assertIn('fecha de fin', str(form.non_field_errors()))
+
     def test_toggle_question_not_found(self):
         with mock.patch('dashboard.views.Question') as Q:
             Q.objects.using.return_value.filter.return_value.first.return_value = None
