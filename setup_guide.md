@@ -11,7 +11,7 @@ exempt_user_ids:
 
 EJ:
 
-        rc_message:
+    rc_message:
       # This needs to match at least e2ee key sharing frequency plus headroom
       per_second: 0.2
       burst_count: 10

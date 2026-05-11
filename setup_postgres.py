@@ -151,7 +151,7 @@ async def login_matrix_bot(session):
         data = await resp.json()
         return data["access_token"]
 
-async def create_room(session, token, name, topic=None):
+async def create_room(session, token, name, topic=None, invite_users=None, is_direct=False):
     url = f"{HOMESERVER}/_matrix/client/v3/createRoom"
     headers = {"Authorization": f"Bearer {token}"}
     body = {
@@ -161,6 +161,10 @@ async def create_room(session, token, name, topic=None):
     }
     if topic:
         body["topic"] = topic
+    if invite_users:
+        body["invite"] = invite_users
+    if is_direct:
+        body["is_direct"] = True
     # Make room require knocking for entry instead of invite-only and set power levels
     body["initial_state"] = [
         {"type": "m.room.join_rules", "state_key": "", "content": {"join_rule": "knock"}},
@@ -201,6 +205,81 @@ async def create_room(session, token, name, topic=None):
                 raise RuntimeError(f"Error creando sala {name}: {resp.status} {await resp.text()}")
     
     raise RuntimeError(f"Error creando sala {name}: Máximo de reintentos alcanzado")
+
+async def send_room_message(session, token, room_id, message, msgtype="m.text"):
+    """Send a plain Matrix message from the bot account."""
+    txn_id = f"welcome_{secrets.token_hex(8)}"
+    url = f"{HOMESERVER}/_matrix/client/v3/rooms/{room_id}/send/m.room.message/{txn_id}"
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    body = {
+        "msgtype": msgtype,
+        "body": message,
+    }
+    async with session.put(url, headers=headers, json=body, timeout=20) as resp:
+        if resp.status not in (200, 201):
+            raise RuntimeError(f"Error enviando mensaje en {room_id}: {resp.status} {await resp.text()}")
+
+
+async def get_joined_rooms(session, token):
+    """Return the room IDs the bot has joined."""
+    url = f"{HOMESERVER}/_matrix/client/v3/joined_rooms"
+    headers = {"Authorization": f"Bearer {token}"}
+    async with session.get(url, headers=headers, timeout=20) as resp:
+        if resp.status != 200:
+            raise RuntimeError(f"Error obteniendo salas unidas: {resp.status} {await resp.text()}")
+        data = await resp.json()
+        return data.get("joined_rooms", [])
+
+
+async def find_existing_welcome_room(session, token, user_mxid, bot_mxid):
+    """Find an existing 1:1 welcome DM between the bot and the given user."""
+    try:
+        joined_rooms = await get_joined_rooms(session, token)
+    except Exception as exc:
+        print(f"   ⚠️  No se pudieron revisar salas existentes para {user_mxid}: {exc}")
+        return None
+
+    for room_id in joined_rooms:
+        try:
+            members = await list_joined_members(session, token, room_id)
+        except Exception:
+            continue
+        room_members = {mxid for mxid in members if mxid}
+        if room_members == {bot_mxid, user_mxid}:
+            return room_id
+    return None
+
+
+async def send_welcome_message(session, token, user_mxid, displayname):
+    """Create a direct welcome room and send a help hint from the bot account."""
+    bot_mxid = BOT_MXID
+    existing_room_id = await find_existing_welcome_room(session, token, user_mxid, bot_mxid)
+    if existing_room_id:
+        await send_room_message(
+            session,
+            token,
+            existing_room_id,
+            f"👋 ¡Bienvenido/a, {displayname or user_mxid}! Para más información usa !ayuda.",
+        )
+        return existing_room_id
+
+    room_name = f"Bienvenida - {displayname}" if displayname else "Bienvenida"
+    topic = "Bienvenida automática del bot. Para más información usa !ayuda"
+    room_id = await create_room(
+        session,
+        token,
+        room_name,
+        topic=topic,
+        invite_users=[user_mxid],
+        is_direct=True,
+    )
+    await send_room_message(
+        session,
+        token,
+        room_id,
+        f"👋 ¡Bienvenido/a, {displayname or user_mxid}! Para más información usa !ayuda.",
+    )
+    return room_id
 
 async def join_user_to_room(session, room_id, user_id):
     """Use admin API to force join a user to a room.
@@ -772,6 +851,12 @@ async def main():
                                 ELSE users.is_teacher
                             END
                     """, matrix_id, moodle_id, is_teacher)
+
+                    try:
+                        await send_welcome_message(session, token, matrix_id, displayname)
+                        print(f"   → Mensaje de bienvenida enviado a {matrix_id}")
+                    except Exception as e:
+                        print(f"   ⚠️  No se pudo enviar la bienvenida a {matrix_id}: {e}")
 
                     # Unir usuario a las salas usando admin API
                     if room_id:
