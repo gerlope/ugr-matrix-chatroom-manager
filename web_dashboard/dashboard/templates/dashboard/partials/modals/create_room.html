@@ -121,7 +121,7 @@
 
         <label class="flex items-center space-x-2" :class="!selectedGroup ? 'opacity-40 cursor-not-allowed' : ''">
           <input type="checkbox" name="restrict_group" class="rounded" :disabled="!selectedGroup" {% if create_room_form.restrict_group.value %}checked{% endif %}>
-          <span>Marcar preguntas como inaccesibles a otros grupos (no se contaran respuestas para estadisticas si no se es del grupo)</span>
+          <span>Restringir sala a grupo (alumnos fuera del grupo no podrán acceder y no se contaran preguntas para sus estadisticas)</span>
         </label>
       </div>
 
