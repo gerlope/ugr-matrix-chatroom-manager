@@ -53,8 +53,7 @@ async def execute_command(client, room_id, event, body):
     is_dm = False
     try:
         # A room is a DM if there are only 2 joined members (bot + user).
-        # Alternatively, we check for the room being marked as a direct room, but
-        # the simplest robust approach is to count joined members.
+        # Alternatively, we check for the room being marked as a direct room
         members_state = await client.get_joined_members(room_id)
         if members_state and len(members_state) <= 2:
             is_dm = True

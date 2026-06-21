@@ -35,8 +35,7 @@ async def get_client() -> Client:
         if _CLIENT is not None:
             # If the client's underlying aiohttp session or its event loop is closed,
             # recreate the client so subsequent requests open a new session on the
-            # currently running event loop. This avoids "Event loop is closed" errors
-            # when `async_to_sync` creates a temporary loop.
+            # currently running event loop.
             session = None
             try:
                 api = getattr(_CLIENT, "api", None)

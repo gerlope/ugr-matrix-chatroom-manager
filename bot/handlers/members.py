@@ -192,11 +192,11 @@ def register(client):
             return
 
         # Detecta unirse a la sala
-        if membership == Membership.JOIN:
-            await client.send_text(
-                room_id,
-                f"🎓 ¡Bienvenido/a {event.state_key} a la sala!"
-            )
+        #if membership == Membership.JOIN:
+        #    #await client.send_text(
+        #        room_id,
+        #        f"🎓 ¡Bienvenido/a {event.state_key} a la sala!"
+        #    )
 
         # Detecta abandonar la sala
         elif membership == Membership.LEAVE:
@@ -217,10 +217,10 @@ def register(client):
                             await tutoring_queue.send_transcript_file(notify_room, transcript)
 
         # Detecta invitación a otros usuarios
-        elif membership == Membership.INVITE:
-            await client.send_text(
-                room_id,
-                f"📩 {event.sender} ha invitado a {event.state_key}."
-            )
+        #elif membership == Membership.INVITE:
+        #    await client.send_text(
+        #        room_id,
+        #        f"📩 {event.sender} ha invitado a {event.state_key}."
+        #    )
     
     client.add_event_handler(EventType.ROOM_MEMBER, on_member_event)

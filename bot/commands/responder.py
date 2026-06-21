@@ -6,7 +6,6 @@ Evalúa la respuesta según el tipo de pregunta y almacena el resultado.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Optional
 
 from core.db.modules import DB_MODULES
 from config_bot import DB_TYPE

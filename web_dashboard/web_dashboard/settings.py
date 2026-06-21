@@ -34,9 +34,7 @@ if not DEBUG:
     CSRF_USE_SESSIONS = True
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
-    SECURE_HSTS_SECONDS = 31536000  # Si vas a usar un valor grande asegurate de que
-                                    # tus certs estan en buen estado y van a segir asi
-                                    # Para hacer tests usad uno bajo
+    SECURE_HSTS_SECONDS = 31536000
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
 

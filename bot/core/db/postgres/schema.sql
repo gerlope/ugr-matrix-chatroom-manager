@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     registered_at TIMESTAMP DEFAULT NOW()
 );
 
--- 🔹 Index for fast lookup by Matrix ID
+-- Index for fast lookup by Matrix ID
 CREATE INDEX IF NOT EXISTS idx_users_matrix_id ON users(matrix_id);
 
 
@@ -32,10 +32,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS unique_active_shortcode_per_teacher
     ON rooms (teacher_id, shortcode)
     WHERE active = TRUE;
 
--- 🔹 Index for fast lookup by Matrix room ID
+-- Index for fast lookup by Matrix room ID
 CREATE INDEX IF NOT EXISTS idx_rooms_room_id ON rooms(room_id);
 
--- 🔹 Index for quick lookup by (teacher, shortcode)
+-- Index for quick lookup by (teacher, shortcode)
 CREATE INDEX IF NOT EXISTS idx_rooms_teacher_shortcode ON rooms(teacher_id, shortcode);
 
 
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS reactions (
     date TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
--- 🔹 Indexes for faster joins and lookups
+-- Indexes for faster joins and lookups
 CREATE INDEX IF NOT EXISTS idx_reactions_teacher_id ON reactions(teacher_id);
 CREATE INDEX IF NOT EXISTS idx_reactions_student_id ON reactions(student_id);
 CREATE INDEX IF NOT EXISTS idx_reactions_room_id ON reactions(room_id);
@@ -79,10 +79,10 @@ CREATE TABLE IF NOT EXISTS teacher_availability (
     CONSTRAINT chk_time_valid CHECK (start_time < end_time)
     );
 
--- 🔹 Index for fast lookup by teacher ID
+-- Index for fast lookup by teacher ID
 CREATE INDEX IF NOT EXISTS idx_teacher_availability_teacher_id ON teacher_availability(teacher_id);
 
--- 🔹 Trigger to prevent overlapping intervals for the same teacher (covers INSERT and UPDATE)
+-- Trigger to prevent overlapping intervals for the same teacher (covers INSERT and UPDATE)
 CREATE OR REPLACE FUNCTION trg_no_overlap_func()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -115,7 +115,7 @@ BEGIN
 END
 $$;
 
--- 🔹 Trigger to enforce availability time window (07:00 - 21:00)
+-- Trigger to enforce availability time window (07:00 - 21:00)
 -- This prevents storing availability that starts before 07:00 or ends after 21:00.
 CREATE OR REPLACE FUNCTION trg_time_bounds_func()
 RETURNS TRIGGER AS $$

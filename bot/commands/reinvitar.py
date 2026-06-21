@@ -80,7 +80,7 @@ async def run(client, room_id, event, args):
     # Check if user is a teacher
     caller_is_teacher = bool(user_row.get(COL_USER_IS_TEACHER))
 
-    # We'll check teacher-role per-course for rooms whose shortcode ends with "_teachers".
+    # Check teacher-role per-course for rooms whose shortcode ends with "_teachers".
     # Cache course -> set(teacher_moodle_ids) to avoid repeated Moodle requests.
     teachers_cache = {}
 

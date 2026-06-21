@@ -8,7 +8,6 @@ from django.views.decorators.http import require_POST
 from django.contrib.auth import login
 from django.contrib.auth.models import User
 import json
-from django.core.serializers.json import DjangoJSONEncoder
 import logging
 
 from .utils import (
