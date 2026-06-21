@@ -3,7 +3,7 @@
 import importlib
 import pkgutil
 import commands
-from config import COMMAND_PREFIX, DB_TYPE
+from config_bot import COMMAND_PREFIX, DB_TYPE
 from core.db.modules import DB_MODULES
 
 COMMANDS = {}

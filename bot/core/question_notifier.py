@@ -9,7 +9,7 @@ import asyncio
 from datetime import datetime
 from typing import  Optional, Set
 from core.db.modules import DB_MODULES
-from config import DB_TYPE
+from config_bot import DB_TYPE
 
 
 QTYPE_LABELS = {

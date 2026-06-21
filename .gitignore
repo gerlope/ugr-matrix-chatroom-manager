@@ -1,4 +1,5 @@
 __pycache__/
 .venv
-config.py
+bot/config_bot.py
+web_dashboard/config_web.py
 web_dashboard/static/

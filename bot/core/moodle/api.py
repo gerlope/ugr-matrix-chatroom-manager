@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from config import MOODLE_TOKEN, MOODLE_URL
+from config_bot import MOODLE_TOKEN, MOODLE_URL
 
 MOODLE_TIMEOUT = 20
 MOODLE_ENDPOINT = f"{MOODLE_URL.rstrip('/')}/webservice/rest/server.php"

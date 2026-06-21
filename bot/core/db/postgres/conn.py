@@ -1,7 +1,7 @@
 # core/db/postgres/conn.py
 
 import asyncpg
-from config import DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT
+from config_bot import DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT
 from pathlib import Path
 
 pool: asyncpg.pool.Pool | None = None  # Pool global

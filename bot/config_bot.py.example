@@ -1,0 +1,18 @@
+HOMESERVER = "https://matrix.example.org"
+SERVER_NAME = "example.org"
+USERNAME = "@bot:example.org"
+PASSWORD = "secret_password"
+COMMAND_PREFIX = "!"
+
+DB_TYPE = "postgres"  # Solo soporta "postgres" pero es útil para potenciales expansiones
+                      # Para añaidir más tipos de BD, añadir a DB_MODULES en core/db/constants.py
+                      # y replicar los archivos de la carpeta postgres con el nuevo tipo
+
+DB_USER = "tu_usuario"
+DB_PASSWORD = "tu_password"
+DB_NAME = "matrix_bot"
+DB_HOST = "localhost"
+DB_PORT = 5432
+
+MOODLE_URL = "https://moodle.example.com"
+MOODLE_TOKEN = "TU_TOKEN_MOODLE"

@@ -1,0 +1,15 @@
+HOMESERVER = "https://matrix.example.org"
+SERVER_NAME = "example.org"
+USERNAME = "@bot:example.org"
+PASSWORD = "secret_password"
+
+DJANGO_SECRET_KEY = "TU_SECRET_KEY"  # Generar con "python3 -c 'from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())'"
+
+DB_USER = "tu_usuario"
+DB_PASSWORD = "tu_password"
+DB_NAME = "matrix_bot"
+DB_HOST = "localhost"
+DB_PORT = 5432
+
+MOODLE_URL = "https://moodle.example.com"
+MOODLE_TOKEN = "TU_TOKEN_MOODLE"

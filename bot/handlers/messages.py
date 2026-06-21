@@ -1,7 +1,7 @@
 # handlers/messages.py
 
 from mautrix.types import EventType, MessageType
-from config import COMMAND_PREFIX
+from config_bot import COMMAND_PREFIX
 from core.command_registry import execute_command
 from core.runtime_state import should_process_event
 from core.tutoring_queue import tutoring_queue

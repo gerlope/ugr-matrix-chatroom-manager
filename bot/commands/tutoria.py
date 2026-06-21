@@ -4,7 +4,7 @@ from datetime import datetime, time
 from typing import Tuple
 
 from core.db.modules import DB_MODULES
-from config import DB_TYPE, SERVER_NAME
+from config_bot import DB_TYPE, SERVER_NAME
 from core.db.constants import (
     COL_ROOM_ROOM_ID,
     COL_ROOM_SHORTCODE,

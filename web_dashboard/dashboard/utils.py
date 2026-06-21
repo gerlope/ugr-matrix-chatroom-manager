@@ -36,7 +36,7 @@ from .models import (
     QuestionResponse,
     TeacherAvailability,
 )
-from config import MOODLE_TOKEN, MOODLE_URL, HOMESERVER, USERNAME, PASSWORD
+from config_web import MOODLE_TOKEN, MOODLE_URL, HOMESERVER, USERNAME, PASSWORD
 from django.core.cache import cache
 
 WEEK_DAYS_ES = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']

@@ -11,7 +11,7 @@ from asgiref.sync import async_to_sync
 from mautrix.client import Client
 from mautrix.types import Membership
 
-from config import HOMESERVER, SERVER_NAME, USERNAME, PASSWORD
+from config_web import HOMESERVER, SERVER_NAME, USERNAME, PASSWORD
 
 logger = logging.getLogger(__name__)
 

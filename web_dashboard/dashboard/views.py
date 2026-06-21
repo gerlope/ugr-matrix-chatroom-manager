@@ -21,7 +21,7 @@ from .models import Room, ExternalUser, TeacherAvailability
 from .forms import ExternalLoginForm, CreateRoomForm, CreateQuestionForm, GradeResponseForm
 from .models import Question, QuestionOption, QuestionResponse
 from django.utils import timezone
-from config import SERVER_NAME
+from config_web import SERVER_NAME
 from .matrix_client import (
     create_room as mc_create_room,
     invite_all_members,

@@ -1,18 +1,6 @@
 # main.py
 
 import asyncio
-from pathlib import Path
-import importlib.util
-import sys
-
-# Load config.py directly (without mutating sys.path) and insert it into sys.modules
-# so that other modules can do `from config import ...` normally.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-_config_path = REPO_ROOT / "config.py"
-_spec = importlib.util.spec_from_file_location("config", str(_config_path))
-_config = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_config)
-sys.modules["config"] = _config
 
 from core.client_manager import create_client
 from core.command_registry import load_commands
@@ -22,7 +10,7 @@ from core.runtime_state import set_bot_start_time
 from core.tutoring_queue import tutoring_queue
 from core.question_notifier import question_notifier
 
-from config import DB_TYPE
+from config_bot import DB_TYPE
 
 async def main():
     db_conn = DB_MODULES[DB_TYPE]["conn"]

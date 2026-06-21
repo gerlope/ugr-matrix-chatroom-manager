@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """
+========================================================================================================
+                                            ¡¡¡¡ATENCION!!!!
+ESTE SCRIPT ES SOLAMENTE UN EJEMPLO HECHO RAPIDAMENTEDE COSAS QUE UN DESPLIEGUE DEBE IMPLEMENTAR APARTE
+                                        USAR SOLAMENTE PARA TESTING
+========================================================================================================
+
 Sincroniza usuarios y asignaturas de Moodle con Matrix y PostgreSQL.
 
 - Crea usuarios en Matrix si no existen.
 - Inserta usuarios en la tabla PostgreSQL `users` con su moodle_id y si son profesores.
 - Crea una sala Matrix por cada asignatura Moodle y otra para profesores.
 - Desactiva salas antiguas en la base de datos.
-- Une automáticamente a los usuarios a las salas usando la Admin API.
+- Une automáticamente a los usuarios a las salas usando la Admin API de Synapse.
 """
 
 import asyncio
@@ -17,14 +23,25 @@ import asyncpg
 import requests
 import string
 import secrets
-from config import (MOODLE_URL, MOODLE_TOKEN,
-                    HOMESERVER, SERVER_NAME, USERNAME, PASSWORD, MATRIX_ADMIN_TOKEN,
-                    DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, DB_PORT
-                    )
 
 # ==============================
 # CONFIGURACIÓN
 # ==============================
+# Rellena estos valores con los de tu entorno antes de ejecutar el script.
+HOMESERVER = "https://matrix.example.org"
+SERVER_NAME = "example.org"
+USERNAME = "@bot:example.org"
+PASSWORD = "secret_password"
+DB_USER = "tu_usuario"
+DB_PASSWORD = "tu_password"
+DB_NAME = "matrix_bot"
+DB_HOST = "localhost"
+DB_PORT = 5432
+MOODLE_URL = "https://moodle.example.com"
+MOODLE_TOKEN = "TU_TOKEN_MOODLE"
+
+# Token de admin Synapse (solo necesario para este script)
+MATRIX_ADMIN_TOKEN = "TU_ADMIN_TOKEN"
 # --- PostgreSQL ---
 PG_DSN = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 # --- Parámetros generales ---

@@ -29,7 +29,12 @@ ugr-matrix-bot/
 ├── LICENSE
 ├── README.md
 ├── bot.py
-├── config.py
+├── bot/
+│   ├── config_bot.py
+│   └── config_bot.py.example
+├── web_dashboard/
+│   ├── config_web.py
+│   └── config_web.py.example
 ├── requirements.txt
 │
 ├── core/
@@ -57,6 +62,8 @@ ugr-matrix-bot/
     ├── reactions.py
     └── redactions.py
 ```
+
+Los archivos raíz `config_bot.py` y `config_web.py` se conservan solo como shims de compatibilidad.
 
 ---
 
@@ -100,13 +107,13 @@ CREATE USER bot_user WITH PASSWORD 'bot_password';
 GRANT ALL PRIVILEGES ON DATABASE matrix_bot TO bot_user;
 ```
 
-💡 Nota: Usa otros nombres o contraseñas, pero asegúrate de reflejarlos en el archivo config.py.
+💡 Nota: Usa otros nombres o contraseñas, pero asegúrate de reflejarlos en bot/config_bot.py y web_dashboard/config_web.py.
 
 Luego, sal del shell con \q.
 
 ### 4️⃣ Configuración del bot
 
-Renombra y edita el archivo `config.py` con los datos de tu instancia Matrix y base de datos:
+Renombra y edita los archivos `bot/config_bot.py` y `web_dashboard/config_web.py` con los datos de tu instancia Matrix y base de datos:
 
 ```python
 HOMESERVER = "https://matrix.example.org"

@@ -9,7 +9,7 @@ from collections import defaultdict
 from typing import Dict, List, Set
 
 from core.db.modules import DB_MODULES
-from config import DB_TYPE
+from config_bot import DB_TYPE
 from core.db.constants import (
     COL_QUESTION_ID,
     COL_QUESTION_TITLE,

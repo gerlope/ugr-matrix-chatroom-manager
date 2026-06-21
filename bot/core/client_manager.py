@@ -1,7 +1,7 @@
 # core/client_manager.py
 
 from mautrix.client import Client
-from config import HOMESERVER, USERNAME, PASSWORD
+from config_bot import HOMESERVER, USERNAME, PASSWORD
 
 async def create_client() -> Client:
     client = Client(mxid=USERNAME, base_url=HOMESERVER)

@@ -8,7 +8,7 @@ from mautrix.errors.request import MNotFound
 from core.db.constants import COL_ROOM_ID, COL_USER_IS_TEACHER
 from core.db.modules import DB_MODULES
 from core.runtime_state import should_process_event
-from config import DB_TYPE
+from config_bot import DB_TYPE
 
 def register(client):
     async def on_add_reaction(event):

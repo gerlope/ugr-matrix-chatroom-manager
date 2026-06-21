@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import List, Dict
 
 from core.db.modules import DB_MODULES
-from config import DB_TYPE
+from config_bot import DB_TYPE
 from core.db.constants import (
     COL_ROOM_ROOM_ID,
     COL_ROOM_SHORTCODE,

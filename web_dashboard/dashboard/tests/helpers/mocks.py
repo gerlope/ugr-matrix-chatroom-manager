@@ -28,7 +28,7 @@ The individual helpers can be composed manually using contextlib.ExitStack.
 from contextlib import contextmanager, ExitStack
 from unittest import mock
 
-from config import USERNAME
+from config_web import USERNAME
 
 # Public API exported by this helpers module. Keeps test imports explicit.
 __all__ = [
